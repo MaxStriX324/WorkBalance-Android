@@ -1,0 +1,17 @@
+*.iml
+.gradle/
+.gradle-bootstrap/
+.idea/
+local.properties
+build/
+captures/
+.externalNativeBuild/
+.cxx/
+app/build/
+*.apk
+*.aab
+*.jks
+*.keystore
+keystore.properties
+WorkBalance_backup*.json
+WorkBalance_????-??.csv
