@@ -14,6 +14,9 @@ interface WorkDao {
     @Query("SELECT * FROM work_events ORDER BY localDateTime")
     fun observeEvents(): Flow<List<WorkEventEntity>>
 
+    @Query("SELECT * FROM work_events ORDER BY localDateTime")
+    suspend fun getEvents(): List<WorkEventEntity>
+
     @Insert
     suspend fun insertEvent(event: WorkEventEntity): Long
 
@@ -29,6 +32,9 @@ interface WorkDao {
     @Query("SELECT * FROM day_overrides")
     fun observeOverrides(): Flow<List<DayOverrideEntity>>
 
+    @Query("SELECT * FROM day_overrides")
+    suspend fun getOverrides(): List<DayOverrideEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertOverride(override: DayOverrideEntity)
 
@@ -37,6 +43,9 @@ interface WorkDao {
 
     @Query("SELECT * FROM settings")
     fun observeSettings(): Flow<List<SettingEntity>>
+
+    @Query("SELECT * FROM settings")
+    suspend fun getSettings(): List<SettingEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun putSetting(setting: SettingEntity)

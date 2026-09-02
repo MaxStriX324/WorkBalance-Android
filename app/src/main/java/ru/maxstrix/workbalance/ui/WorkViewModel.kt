@@ -22,6 +22,8 @@ import ru.maxstrix.workbalance.domain.Schedule
 import ru.maxstrix.workbalance.domain.WorkEvent
 import ru.maxstrix.workbalance.domain.WorkTimeCalculator
 import ru.maxstrix.workbalance.notification.LunchReminderScheduler
+import ru.maxstrix.workbalance.quickaccess.PresenceController
+import ru.maxstrix.workbalance.quickaccess.QuickAccessUpdater
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.YearMonth
@@ -96,41 +98,25 @@ class WorkViewModel(
     }
 
     fun togglePresence() = viewModelScope.launch {
-        val snapshot = state.value
-        val leaving = snapshot.today?.isCurrentlyInside == true
-        val type = if (leaving) EventType.OUT else EventType.IN
-        repository.addEvent(LocalDateTime.now(), type)
-        if (leaving && snapshot.lunchReminderEnabled) {
-            val usedLunch = snapshot.today?.outsideMinutes ?: 0
-            val remainingLunch = max(0, snapshot.schedule.lunchMinutes.toLong() - usedLunch)
-            if (remainingLunch > 0) {
-                val delayMinutes = max(0, remainingLunch - snapshot.lunchReminderLeadMinutes)
-                LunchReminderScheduler.schedule(
-                    appContext,
-                    delayMinutes = delayMinutes,
-                    leadMinutes = minOf(remainingLunch, snapshot.lunchReminderLeadMinutes.toLong()).toInt()
-                )
-            } else {
-                LunchReminderScheduler.cancel(appContext)
-            }
-        } else {
-            LunchReminderScheduler.cancel(appContext)
-        }
+        PresenceController(appContext).toggle()
         now.value = LocalDateTime.now()
     }
 
     fun addEvent(at: LocalDateTime, type: EventType) = viewModelScope.launch {
         repository.addEvent(at, type)
+        QuickAccessUpdater.refresh(appContext)
         now.value = LocalDateTime.now()
     }
 
     fun updateEvent(event: WorkEvent) = viewModelScope.launch {
         repository.updateEvent(event)
+        QuickAccessUpdater.refresh(appContext)
         now.value = LocalDateTime.now()
     }
 
     fun deleteEvent(event: WorkEvent) = viewModelScope.launch {
         repository.deleteEvent(event)
+        QuickAccessUpdater.refresh(appContext)
         now.value = LocalDateTime.now()
     }
 
@@ -138,19 +124,23 @@ class WorkViewModel(
 
     fun setDay(date: LocalDate, kind: DayKind) = viewModelScope.launch {
         repository.setDay(date, kind)
+        QuickAccessUpdater.refresh(appContext)
     }
 
     fun setSchedule(workMinutes: Int, lunchMinutes: Int) = viewModelScope.launch {
         repository.setSchedule(workMinutes.coerceAtLeast(1), lunchMinutes.coerceAtLeast(0))
+        QuickAccessUpdater.refresh(appContext)
     }
 
     fun setWorkplaceName(name: String) = viewModelScope.launch {
         repository.setWorkplaceName(name)
+        QuickAccessUpdater.refresh(appContext)
     }
 
     fun setLunchReminder(enabled: Boolean, leadMinutes: Int) = viewModelScope.launch {
         repository.setLunchReminder(enabled, leadMinutes)
         if (!enabled) LunchReminderScheduler.cancel(appContext)
+        QuickAccessUpdater.refresh(appContext)
     }
 
     fun backupJson(): String = BackupCodec.encode(
@@ -163,7 +153,10 @@ class WorkViewModel(
 
     fun importBackup(json: String, onResult: (String) -> Unit) = viewModelScope.launch {
         runCatching { repository.importBackup(json) }
-            .onSuccess { onResult("Резервная копия восстановлена") }
+            .onSuccess {
+                QuickAccessUpdater.refresh(appContext)
+                onResult("Резервная копия восстановлена")
+            }
             .onFailure { error -> onResult("Не удалось восстановить: ${error.message ?: "неизвестная ошибка"}") }
     }
 

@@ -23,21 +23,12 @@ class WorkRepository(private val dao: WorkDao) {
     val data: Flow<WorkData> = combine(
         dao.observeEvents(), dao.observeOverrides(), dao.observeSettings()
     ) { eventRows, overrideRows, settingsRows ->
-        val settings = settingsRows.associate { it.key to it.value }
-        WorkData(
-            events = eventRows.map { it.toDomain() },
-            overrides = overrideRows.associate { row ->
-                row.date to DayOverride(row.date, row.dayKind, row.customWorkMinutes)
-            },
-            schedule = Schedule(
-                workMinutes = settings[KEY_WORK_MINUTES]?.toIntOrNull() ?: 480,
-                lunchMinutes = settings[KEY_LUNCH_MINUTES]?.toIntOrNull() ?: 60
-            ),
-            workplaceName = settings[KEY_WORKPLACE_NAME] ?: "Работа",
-            lunchReminderEnabled = settings[KEY_LUNCH_REMINDER_ENABLED]?.toBooleanStrictOrNull() ?: true,
-            lunchReminderLeadMinutes = settings[KEY_LUNCH_REMINDER_LEAD]?.toIntOrNull() ?: 15
-        )
+        mapData(eventRows, overrideRows, settingsRows)
     }
+
+    suspend fun snapshot(): WorkData = mapData(
+        dao.getEvents(), dao.getOverrides(), dao.getSettings()
+    )
 
     suspend fun addEvent(at: LocalDateTime, type: EventType) {
         dao.insertEvent(WorkEventEntity(localDateTime = at.toString(), type = type.name))
@@ -81,5 +72,26 @@ class WorkRepository(private val dao: WorkDao) {
         const val KEY_WORKPLACE_NAME = "workplace_name"
         const val KEY_LUNCH_REMINDER_ENABLED = "lunch_reminder_enabled"
         const val KEY_LUNCH_REMINDER_LEAD = "lunch_reminder_lead"
+    }
+
+    private fun mapData(
+        eventRows: List<WorkEventEntity>,
+        overrideRows: List<DayOverrideEntity>,
+        settingsRows: List<SettingEntity>
+    ): WorkData {
+        val settings = settingsRows.associate { it.key to it.value }
+        return WorkData(
+            events = eventRows.map { it.toDomain() },
+            overrides = overrideRows.associate { row ->
+                row.date to DayOverride(row.date, row.dayKind, row.customWorkMinutes)
+            },
+            schedule = Schedule(
+                workMinutes = settings[KEY_WORK_MINUTES]?.toIntOrNull() ?: 480,
+                lunchMinutes = settings[KEY_LUNCH_MINUTES]?.toIntOrNull() ?: 60
+            ),
+            workplaceName = settings[KEY_WORKPLACE_NAME] ?: "Работа",
+            lunchReminderEnabled = settings[KEY_LUNCH_REMINDER_ENABLED]?.toBooleanStrictOrNull() ?: true,
+            lunchReminderLeadMinutes = settings[KEY_LUNCH_REMINDER_LEAD]?.toIntOrNull() ?: 15
+        )
     }
 }

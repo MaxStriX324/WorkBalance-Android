@@ -20,7 +20,7 @@ git init
 git config user.name "maxstrix324"
 git config user.email "maxstrix324@users.noreply.github.com"
 git add .
-git commit -m "Initial public release of WorkBalance 0.3.0"
+git commit -m "Release WorkBalance 0.4.0"
 git branch -M main
 git remote add origin https://github.com/maxstrix324/WorkBalance-Android.git
 git push -u origin main

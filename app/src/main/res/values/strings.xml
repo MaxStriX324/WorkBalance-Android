@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">Баланс часов</string>
+    <string name="widget_description">Рабочее время, баланс и быстрая отметка входа или выхода</string>
 </resources>
