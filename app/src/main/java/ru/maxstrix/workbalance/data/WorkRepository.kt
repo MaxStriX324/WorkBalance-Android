@@ -16,7 +16,8 @@ data class WorkData(
     val schedule: Schedule,
     val workplaceName: String,
     val lunchReminderEnabled: Boolean,
-    val lunchReminderLeadMinutes: Int
+    val lunchReminderLeadMinutes: Int,
+    val automaticUpdateCheckEnabled: Boolean
 )
 
 class WorkRepository(private val dao: WorkDao) {
@@ -97,6 +98,10 @@ class WorkRepository(private val dao: WorkDao) {
         dao.putSetting(SettingEntity(KEY_LUNCH_REMINDER_LEAD, leadMinutes.coerceIn(1, 59).toString()))
     }
 
+    suspend fun setAutomaticUpdateCheck(enabled: Boolean) {
+        dao.putSetting(SettingEntity(KEY_AUTOMATIC_UPDATE_CHECK, enabled.toString()))
+    }
+
     suspend fun importBackup(json: String) {
         val payload = BackupCodec.parse(json)
         dao.replaceAll(payload.events, payload.overrides, payload.settings)
@@ -108,6 +113,7 @@ class WorkRepository(private val dao: WorkDao) {
         const val KEY_WORKPLACE_NAME = "workplace_name"
         const val KEY_LUNCH_REMINDER_ENABLED = "lunch_reminder_enabled"
         const val KEY_LUNCH_REMINDER_LEAD = "lunch_reminder_lead"
+        const val KEY_AUTOMATIC_UPDATE_CHECK = "automatic_update_check"
     }
 
     private fun mapData(
@@ -127,7 +133,9 @@ class WorkRepository(private val dao: WorkDao) {
             ),
             workplaceName = settings[KEY_WORKPLACE_NAME] ?: "Работа",
             lunchReminderEnabled = settings[KEY_LUNCH_REMINDER_ENABLED]?.toBooleanStrictOrNull() ?: true,
-            lunchReminderLeadMinutes = settings[KEY_LUNCH_REMINDER_LEAD]?.toIntOrNull() ?: 15
+            lunchReminderLeadMinutes = settings[KEY_LUNCH_REMINDER_LEAD]?.toIntOrNull() ?: 15,
+            automaticUpdateCheckEnabled = settings[KEY_AUTOMATIC_UPDATE_CHECK]
+                ?.toBooleanStrictOrNull() ?: true
         )
     }
 }

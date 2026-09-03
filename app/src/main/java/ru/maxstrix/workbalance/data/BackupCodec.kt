@@ -31,6 +31,7 @@ object BackupCodec {
                 .put("lunchMinutes", data.schedule.lunchMinutes)
                 .put("lunchReminderEnabled", data.lunchReminderEnabled)
                 .put("lunchReminderLeadMinutes", data.lunchReminderLeadMinutes)
+                .put("automaticUpdateCheckEnabled", data.automaticUpdateCheckEnabled)
             )
 
         val events = JSONArray()
@@ -71,7 +72,11 @@ object BackupCodec {
             SettingEntity(WorkRepository.KEY_LUNCH_MINUTES, lunchMinutes.toString()),
             SettingEntity(WorkRepository.KEY_WORKPLACE_NAME, settingsJson.optString("workplaceName", "Работа")),
             SettingEntity(WorkRepository.KEY_LUNCH_REMINDER_ENABLED, settingsJson.optBoolean("lunchReminderEnabled", true).toString()),
-            SettingEntity(WorkRepository.KEY_LUNCH_REMINDER_LEAD, leadMinutes.toString())
+            SettingEntity(WorkRepository.KEY_LUNCH_REMINDER_LEAD, leadMinutes.toString()),
+            SettingEntity(
+                WorkRepository.KEY_AUTOMATIC_UPDATE_CHECK,
+                settingsJson.optBoolean("automaticUpdateCheckEnabled", true).toString()
+            )
         )
 
         val eventsJson = root.getJSONArray("events")

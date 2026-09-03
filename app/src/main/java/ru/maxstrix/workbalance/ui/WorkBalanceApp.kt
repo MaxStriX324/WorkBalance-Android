@@ -58,6 +58,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -68,11 +69,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
+import ru.maxstrix.workbalance.BuildConfig
 import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayResult
 import ru.maxstrix.workbalance.domain.EventType
@@ -84,6 +87,8 @@ import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.TextStyle
 import java.util.Locale
+
+private const val PROJECT_URL = "https://github.com/MaxStriX324/WorkBalance-Android"
 
 private enum class AppPage(val label: String) {
     TODAY("Сегодня"), CALENDAR("Календарь"), FORECAST("Прогноз"), SETTINGS("Настройки")
@@ -103,6 +108,7 @@ private data class IntervalEditorState(
 fun WorkBalanceApp(viewModel: WorkViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     var page by remember { mutableStateOf(AppPage.TODAY) }
     var editedEvent by remember { mutableStateOf<WorkEvent?>(null) }
     var addingEvent by remember { mutableStateOf(false) }
@@ -111,6 +117,13 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
     var pendingImport by remember { mutableStateOf<String?>(null) }
     val snackbarHostState = remember { SnackbarHostState() }
     val messageScope = rememberCoroutineScope()
+
+    LaunchedEffect(state.updateMessage) {
+        state.updateMessage?.let { message ->
+            snackbarHostState.showSnackbar(message)
+            viewModel.consumeUpdateMessage()
+        }
+    }
 
     val exportBackup = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -192,11 +205,13 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                 AppPage.FORECAST -> ForecastScreen(state, Modifier.padding(padding))
                 AppPage.SETTINGS -> SettingsScreen(
                     state = state,
-                    onSave = { name, work, lunch, enabled, lead ->
-                        viewModel.saveSettings(name, work, lunch, enabled, lead) {
+                    onSave = { name, work, lunch, enabled, lead, updateCheckEnabled ->
+                        viewModel.saveSettings(name, work, lunch, enabled, lead, updateCheckEnabled) {
                             messageScope.launch { snackbarHostState.showSnackbar("Настройки сохранены") }
                         }
                     },
+                    onOpenProject = { uriHandler.openUri(PROJECT_URL) },
+                    onCheckUpdates = { viewModel.checkForUpdates() },
                     onExportBackup = { exportBackup.launch("WorkBalance_backup.json") },
                     onImportBackup = { importBackup.launch(arrayOf("application/json", "text/plain")) },
                     onExportCsv = {
@@ -261,6 +276,38 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                 }) { Text("Восстановить") }
             },
             dismissButton = { TextButton(onClick = { pendingImport = null }) { Text("Отмена") } }
+        )
+    }
+    state.availableRelease?.let { release ->
+        AlertDialog(
+            onDismissRequest = viewModel::dismissAvailableRelease,
+            title = { Text("Доступна версия ${release.version}") },
+            text = {
+                Column(
+                    Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Установлена версия ${BuildConfig.VERSION_NAME}.")
+                    Text(
+                        "Обновление устанавливается вручную со страницы проекта. При той же подписи APK ваши данные сохранятся.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (release.notes.isNotBlank()) {
+                        HorizontalDivider()
+                        Text("Что изменилось", fontWeight = FontWeight.Bold)
+                        Text(release.notes.take(2_000))
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.dismissAvailableRelease()
+                    uriHandler.openUri(release.pageUrl)
+                }) { Text("Открыть релиз") }
+            },
+            dismissButton = {
+                TextButton(onClick = viewModel::dismissAvailableRelease) { Text("Позже") }
+            }
         )
     }
 }
@@ -546,7 +593,9 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
 @Composable
 private fun SettingsScreen(
     state: WorkUiState,
-    onSave: (String, Int, Int, Boolean, Int) -> Unit,
+    onSave: (String, Int, Int, Boolean, Int, Boolean) -> Unit,
+    onOpenProject: () -> Unit,
+    onCheckUpdates: () -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     onExportCsv: () -> Unit,
@@ -559,6 +608,9 @@ private fun SettingsScreen(
     var lunchMinutes by remember(state.schedule.lunchMinutes) { mutableStateOf(state.schedule.lunchMinutes.toString()) }
     var reminderEnabled by remember(state.lunchReminderEnabled) { mutableStateOf(state.lunchReminderEnabled) }
     var reminderLead by remember(state.lunchReminderLeadMinutes) { mutableIntStateOf(state.lunchReminderLeadMinutes) }
+    var automaticUpdateCheckEnabled by remember(state.automaticUpdateCheckEnabled) {
+        mutableStateOf(state.automaticUpdateCheckEnabled)
+    }
     var showInstructions by remember { mutableStateOf(false) }
 
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -612,16 +664,59 @@ private fun SettingsScreen(
             }
         }
         item {
-            Button(onClick = {
-                val totalWork = (workHours.toIntOrNull() ?: 0) * 60 + (workMinutes.toIntOrNull() ?: 0)
-                onSave(name, totalWork, lunchMinutes.toIntOrNull() ?: 0, reminderEnabled, reminderLead)
-            }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Сохранить") }
-        }
-        item {
             OutlinedButton(onClick = { showInstructions = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Icon(Icons.Default.HelpOutline, null)
                 Text("  Инструкция")
             }
+        }
+        item {
+            Card(shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("О приложении", fontWeight = FontWeight.Bold)
+                    MetricRow("Версия", BuildConfig.VERSION_NAME)
+                    Text("Автор проекта: Максим (MaxStriX324)")
+                    Text(
+                        "Исходный код, история изменений и установочные APK публикуются на GitHub.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(onClick = onOpenProject, modifier = Modifier.fillMaxWidth()) {
+                        Text("Открыть проект на GitHub")
+                    }
+                    OutlinedButton(
+                        onClick = onCheckUpdates,
+                        enabled = !state.checkingForUpdates,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (state.checkingForUpdates) "Проверяем…" else "Проверить обновления")
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Автоматическая проверка", fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "При запуске, не чаще одного раза в сутки. Рабочие данные не отправляются.",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = automaticUpdateCheckEnabled,
+                            onCheckedChange = { automaticUpdateCheckEnabled = it }
+                        )
+                    }
+                }
+            }
+        }
+        item {
+            Button(onClick = {
+                val totalWork = (workHours.toIntOrNull() ?: 0) * 60 + (workMinutes.toIntOrNull() ?: 0)
+                onSave(
+                    name,
+                    totalWork,
+                    lunchMinutes.toIntOrNull() ?: 0,
+                    reminderEnabled,
+                    reminderLead,
+                    automaticUpdateCheckEnabled
+                )
+            }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Сохранить настройки") }
         }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
@@ -709,6 +804,10 @@ private fun InstructionsDialog(onDismiss: () -> Unit) {
                 InstructionSection(
                     "7. Быстрый доступ",
                     "Добавьте виджет на домашний экран или плитку WorkBalance в шторку Android. Все кнопки используют одну базу данных."
+                )
+                InstructionSection(
+                    "8. Обновления",
+                    "В разделе «О приложении» можно открыть GitHub и проверить новую версию. Автоматическая проверка выполняется при запуске не чаще одного раза в сутки и не отправляет рабочие отметки."
                 )
             }
         },

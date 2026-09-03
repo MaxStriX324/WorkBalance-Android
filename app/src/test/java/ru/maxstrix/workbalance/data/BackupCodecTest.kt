@@ -26,7 +26,8 @@ class BackupCodecTest {
             schedule = Schedule(480, 60),
             workplaceName = "Работа",
             lunchReminderEnabled = true,
-            lunchReminderLeadMinutes = 15
+            lunchReminderLeadMinutes = 15,
+            automaticUpdateCheckEnabled = false
         )
 
         val parsed = BackupCodec.parse(BackupCodec.encode(data))
@@ -37,6 +38,9 @@ class BackupCodecTest {
         assertEquals(1, parsed.overrides.size)
         assertEquals("WORKDAY", parsed.overrides.first().kind)
         assertTrue(parsed.settings.any { it.key == WorkRepository.KEY_WORK_MINUTES && it.value == "480" })
+        assertTrue(parsed.settings.any {
+            it.key == WorkRepository.KEY_AUTOMATIC_UPDATE_CHECK && it.value == "false"
+        })
     }
 
     @Test

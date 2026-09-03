@@ -13,7 +13,8 @@
     "workMinutes": 480,
     "lunchMinutes": 60,
     "lunchReminderEnabled": true,
-    "lunchReminderLeadMinutes": 15
+    "lunchReminderLeadMinutes": 15,
+    "automaticUpdateCheckEnabled": true
   },
   "events": [
     { "at": "2026-09-02T08:45", "type": "IN" },
