@@ -34,6 +34,42 @@ class WorkRepository(private val dao: WorkDao) {
         dao.insertEvent(WorkEventEntity(localDateTime = at.toString(), type = type.name))
     }
 
+    suspend fun addInterval(start: LocalDateTime, end: LocalDateTime) {
+        dao.insertEvents(
+            listOf(
+                WorkEventEntity(localDateTime = start.toString(), type = EventType.IN.name),
+                WorkEventEntity(localDateTime = end.toString(), type = EventType.OUT.name)
+            )
+        )
+    }
+
+    suspend fun saveInterval(
+        startEvent: WorkEvent,
+        endEvent: WorkEvent?,
+        start: LocalDateTime,
+        end: LocalDateTime
+    ) {
+        val updated = mutableListOf(
+            WorkEventEntity(startEvent.id, start.toString(), EventType.IN.name)
+        )
+        if (endEvent == null) {
+            dao.updateEvents(updated)
+            dao.insertEvent(WorkEventEntity(localDateTime = end.toString(), type = EventType.OUT.name))
+        } else {
+            updated += WorkEventEntity(endEvent.id, end.toString(), EventType.OUT.name)
+            dao.updateEvents(updated)
+        }
+    }
+
+    suspend fun deleteInterval(startEvent: WorkEvent, endEvent: WorkEvent?) {
+        dao.deleteEvents(
+            listOfNotNull(
+                WorkEventEntity(startEvent.id, startEvent.at.toString(), startEvent.type.name),
+                endEvent?.let { WorkEventEntity(it.id, it.at.toString(), it.type.name) }
+            )
+        )
+    }
+
     suspend fun updateEvent(event: WorkEvent) {
         dao.updateEvent(WorkEventEntity(event.id, event.at.toString(), event.type.name))
     }

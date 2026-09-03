@@ -26,18 +26,18 @@ class PresenceController(context: Context) {
         val type = if (leaving) EventType.OUT else EventType.IN
         repository.addEvent(now, type)
 
-        if (leaving && data.lunchReminderEnabled) {
+        if (leaving && WorkTimeCalculator.shouldScheduleLunchReminder(
+                today,
+                data.lunchReminderEnabled,
+                data.lunchReminderLeadMinutes
+            )
+        ) {
             val remainingLunch = max(0, data.schedule.lunchMinutes.toLong() - today.outsideMinutes)
-            if (remainingLunch > 0) {
-                val delayMinutes = max(0, remainingLunch - data.lunchReminderLeadMinutes)
-                LunchReminderScheduler.schedule(
-                    appContext,
-                    delayMinutes = delayMinutes,
-                    leadMinutes = minOf(remainingLunch, data.lunchReminderLeadMinutes.toLong()).toInt()
-                )
-            } else {
-                LunchReminderScheduler.cancel(appContext)
-            }
+            LunchReminderScheduler.schedule(
+                appContext,
+                delayMinutes = remainingLunch - data.lunchReminderLeadMinutes,
+                leadMinutes = data.lunchReminderLeadMinutes
+            )
         } else {
             LunchReminderScheduler.cancel(appContext)
         }

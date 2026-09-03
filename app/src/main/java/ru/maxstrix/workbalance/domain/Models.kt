@@ -15,7 +15,8 @@ enum class DayKind(val title: String) {
     VACATION("Отпуск"),
     SICK("Больничный"),
     BUSINESS_TRIP("Командировка"),
-    DAY_OFF("Отгул")
+    DAY_OFF("Отгул"),
+    PLANNED_ABSENCE("Не буду, отработаю заранее")
 }
 
 data class WorkEvent(
@@ -46,6 +47,8 @@ data class DayResult(
     val lastOut: LocalDateTime?,
     val presenceMinutes: Long,
     val outsideMinutes: Long,
+    val lunchOutsideMinutes: Long,
+    val extraOutsideMinutes: Long,
     val deductedLunchMinutes: Long,
     val creditedMinutes: Long,
     val requiredMinutes: Long,
@@ -62,5 +65,12 @@ data class MonthResult(
     val remainingMinutes: Long,
     val remainingWorkDays: Int,
     val averageMinutesPerRemainingDay: Long,
+    val presenceMinutes: Long,
+    val outsideMinutes: Long,
+    val lunchOutsideMinutes: Long,
+    val extraOutsideMinutes: Long,
+    val deductedLunchMinutes: Long,
+    val workedDays: Int,
+    val averageCreditedPerWorkedDay: Long,
     val days: List<DayResult>
 )

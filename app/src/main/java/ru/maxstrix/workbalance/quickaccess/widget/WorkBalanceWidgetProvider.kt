@@ -20,7 +20,6 @@ import java.time.LocalDateTime
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import kotlin.math.abs
-import kotlin.math.max
 
 class WorkBalanceWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, appWidgetIds: IntArray) {
@@ -64,7 +63,7 @@ class WorkBalanceWidgetProvider : AppWidgetProvider() {
             val month = WorkTimeCalculator.calculateMonth(
                 YearMonth.from(date), data.events, data.schedule, data.overrides, now
             )
-            val need = max(0, today.requiredMinutes - today.creditedMinutes)
+            val need = WorkTimeCalculator.minutesUntilCreditedTarget(today, today.requiredMinutes)
             val exitTime = if (today.isCurrentlyInside) now.plusMinutes(need).format(timeFormatter) else "—"
             val manager = AppWidgetManager.getInstance(context)
 

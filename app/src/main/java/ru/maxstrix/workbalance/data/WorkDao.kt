@@ -26,8 +26,14 @@ interface WorkDao {
     @Update
     suspend fun updateEvent(event: WorkEventEntity)
 
+    @Update
+    suspend fun updateEvents(events: List<WorkEventEntity>)
+
     @Delete
     suspend fun deleteEvent(event: WorkEventEntity)
+
+    @Delete
+    suspend fun deleteEvents(events: List<WorkEventEntity>)
 
     @Query("SELECT * FROM day_overrides")
     fun observeOverrides(): Flow<List<DayOverrideEntity>>

@@ -17,6 +17,7 @@ object WorkTimeCalculator {
         return when (override?.kind ?: DayKind.AUTO) {
             DayKind.WORKDAY -> schedule.workMinutes.toLong()
             DayKind.BUSINESS_TRIP -> schedule.workMinutes.toLong()
+            DayKind.PLANNED_ABSENCE -> schedule.workMinutes.toLong()
             DayKind.AUTO -> if (date.dayOfWeek in schedule.workingDays) schedule.workMinutes.toLong() else 0
             DayKind.WEEKEND, DayKind.HOLIDAY, DayKind.VACATION,
             DayKind.SICK, DayKind.DAY_OFF -> 0
@@ -86,7 +87,9 @@ object WorkTimeCalculator {
         } else 0L
         val outside = max(0, totalSpan - presence)
         val lunchRequired = schedule.lunchMinutes.toLong()
-        val missingLunch = max(0, lunchRequired - outside)
+        val lunchOutside = minOf(outside, lunchRequired)
+        val extraOutside = max(0, outside - lunchRequired)
+        val missingLunch = if (firstIn == null) 0 else max(0, lunchRequired - outside)
         val credited = max(0, presence - missingLunch)
         val required = requiredMinutes(date, schedule, override)
 
@@ -97,6 +100,8 @@ object WorkTimeCalculator {
             lastOut = lastOut,
             presenceMinutes = presence,
             outsideMinutes = outside,
+            lunchOutsideMinutes = lunchOutside,
+            extraOutsideMinutes = extraOutside,
             deductedLunchMinutes = missingLunch,
             creditedMinutes = credited,
             requiredMinutes = required,
@@ -126,8 +131,13 @@ object WorkTimeCalculator {
         val creditedThroughToday = days
             .filter { !it.date.isAfter(today) }
             .sumOf { it.creditedMinutes }
-        val remainingDays = days.count { it.requiredMinutes > 0 && !it.date.isBefore(today) }
+        val remainingDays = days.count {
+            it.requiredMinutes > 0 &&
+                !it.date.isBefore(today) &&
+                overrides[it.date]?.kind != DayKind.PLANNED_ABSENCE
+        }
         val remaining = max(0, plan - credited)
+        val workedDays = days.count { it.presenceMinutes > 0 }
 
         return MonthResult(
             month = month,
@@ -137,8 +147,31 @@ object WorkTimeCalculator {
             remainingMinutes = remaining,
             remainingWorkDays = remainingDays,
             averageMinutesPerRemainingDay = if (remainingDays == 0) 0 else (remaining + remainingDays - 1) / remainingDays,
+            presenceMinutes = days.sumOf { it.presenceMinutes },
+            outsideMinutes = days.sumOf { it.outsideMinutes },
+            lunchOutsideMinutes = days.sumOf { it.lunchOutsideMinutes },
+            extraOutsideMinutes = days.sumOf { it.extraOutsideMinutes },
+            deductedLunchMinutes = days.sumOf { it.deductedLunchMinutes },
+            workedDays = workedDays,
+            averageCreditedPerWorkedDay = if (workedDays == 0) 0 else credited / workedDays,
             days = days
         )
+    }
+
+    fun minutesUntilCreditedTarget(day: DayResult, targetMinutes: Long): Long {
+        if (targetMinutes <= day.creditedMinutes) return 0
+        return max(0, targetMinutes + day.deductedLunchMinutes - day.presenceMinutes)
+    }
+
+    fun shouldScheduleLunchReminder(
+        day: DayResult,
+        enabled: Boolean,
+        leadMinutes: Int
+    ): Boolean {
+        val remainingLunch = day.deductedLunchMinutes
+        return enabled &&
+            day.creditedMinutes < day.requiredMinutes &&
+            remainingLunch > leadMinutes
     }
 
     fun defaultScheduleForRate(rate: Double): Schedule = when {

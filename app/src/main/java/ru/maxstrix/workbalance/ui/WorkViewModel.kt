@@ -38,10 +38,13 @@ data class WorkUiState(
     val month: MonthResult? = null,
     val selectedMonth: YearMonth = YearMonth.now(),
     val previousBalanceMinutes: Long = 0,
+    val balanceIncludingTodayMinutes: Long = 0,
     val lunchReminderEnabled: Boolean = true,
     val lunchReminderLeadMinutes: Int = 15,
     val normalExit: LocalDateTime? = null,
-    val earliestExit: LocalDateTime? = null,
+    val balanceZeroExit: LocalDateTime? = null,
+    val recommendedExit: LocalDateTime? = null,
+    val recommendedTodayMinutes: Long = 0,
     val data: WorkData? = null
 )
 
@@ -66,10 +69,23 @@ class WorkViewModel(
         val previousBalance = currentMonth.days
             .filter { it.date.isBefore(clock.toLocalDate()) }
             .sumOf { it.balanceMinutes }
-        val normalNeed = max(0, today.requiredMinutes - today.creditedMinutes)
-        val usablePreviousBalance = max(0, previousBalance)
-        val earliestTarget = max(0, today.requiredMinutes - usablePreviousBalance)
-        val earliestNeed = max(0, earliestTarget - today.creditedMinutes)
+        val balanceIncludingToday = previousBalance + today.balanceMinutes
+        val normalNeed = WorkTimeCalculator.minutesUntilCreditedTarget(today, today.requiredMinutes)
+        val balanceZeroTarget = max(0, today.requiredMinutes - previousBalance)
+        val balanceZeroNeed = WorkTimeCalculator.minutesUntilCreditedTarget(today, balanceZeroTarget)
+        val planningDays = currentMonth.days.count { day ->
+            !day.date.isBefore(clock.toLocalDate()) &&
+                day.requiredMinutes > 0 &&
+                data.overrides[day.date]?.kind != DayKind.PLANNED_ABSENCE
+        }
+        val creditedBeforeToday = currentMonth.days
+            .filter { it.date.isBefore(clock.toLocalDate()) }
+            .sumOf { it.creditedMinutes }
+        val remainingAtDayStart = max(0, currentMonth.planMinutes - creditedBeforeToday)
+        val recommendedToday = if (planningDays == 0) 0 else {
+            (remainingAtDayStart + planningDays - 1) / planningDays
+        }
+        val recommendedNeed = WorkTimeCalculator.minutesUntilCreditedTarget(today, recommendedToday)
 
         WorkUiState(
             loading = false,
@@ -80,10 +96,15 @@ class WorkViewModel(
             month = monthResult,
             selectedMonth = month,
             previousBalanceMinutes = previousBalance,
+            balanceIncludingTodayMinutes = balanceIncludingToday,
             lunchReminderEnabled = data.lunchReminderEnabled,
             lunchReminderLeadMinutes = data.lunchReminderLeadMinutes,
             normalExit = if (today.isCurrentlyInside) clock.plusMinutes(normalNeed) else null,
-            earliestExit = if (today.isCurrentlyInside) clock.plusMinutes(earliestNeed) else null,
+            balanceZeroExit = if (today.isCurrentlyInside) clock.plusMinutes(balanceZeroNeed) else null,
+            recommendedExit = if (today.isCurrentlyInside && recommendedToday > 0) {
+                clock.plusMinutes(recommendedNeed)
+            } else null,
+            recommendedTodayMinutes = recommendedToday,
             data = data
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WorkUiState())
@@ -120,6 +141,29 @@ class WorkViewModel(
         now.value = LocalDateTime.now()
     }
 
+    fun addInterval(start: LocalDateTime, end: LocalDateTime) = viewModelScope.launch {
+        repository.addInterval(start, end)
+        QuickAccessUpdater.refresh(appContext)
+        now.value = LocalDateTime.now()
+    }
+
+    fun saveInterval(
+        startEvent: WorkEvent,
+        endEvent: WorkEvent?,
+        start: LocalDateTime,
+        end: LocalDateTime
+    ) = viewModelScope.launch {
+        repository.saveInterval(startEvent, endEvent, start, end)
+        QuickAccessUpdater.refresh(appContext)
+        now.value = LocalDateTime.now()
+    }
+
+    fun deleteInterval(startEvent: WorkEvent, endEvent: WorkEvent?) = viewModelScope.launch {
+        repository.deleteInterval(startEvent, endEvent)
+        QuickAccessUpdater.refresh(appContext)
+        now.value = LocalDateTime.now()
+    }
+
     fun setMonth(month: YearMonth) { selectedMonth.value = month }
 
     fun setDay(date: LocalDate, kind: DayKind) = viewModelScope.launch {
@@ -141,6 +185,22 @@ class WorkViewModel(
         repository.setLunchReminder(enabled, leadMinutes)
         if (!enabled) LunchReminderScheduler.cancel(appContext)
         QuickAccessUpdater.refresh(appContext)
+    }
+
+    fun saveSettings(
+        name: String,
+        workMinutes: Int,
+        lunchMinutes: Int,
+        reminderEnabled: Boolean,
+        reminderLeadMinutes: Int,
+        onSaved: () -> Unit
+    ) = viewModelScope.launch {
+        repository.setWorkplaceName(name)
+        repository.setSchedule(workMinutes.coerceAtLeast(1), lunchMinutes.coerceAtLeast(0))
+        repository.setLunchReminder(reminderEnabled, reminderLeadMinutes)
+        if (!reminderEnabled) LunchReminderScheduler.cancel(appContext)
+        QuickAccessUpdater.refresh(appContext)
+        onSaved()
     }
 
     fun backupJson(): String = BackupCodec.encode(

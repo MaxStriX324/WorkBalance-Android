@@ -5,6 +5,8 @@ import android.app.TimePickerDialog
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
@@ -40,12 +44,15 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -55,6 +62,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -64,6 +72,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
 import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayResult
 import ru.maxstrix.workbalance.domain.EventType
@@ -80,6 +89,16 @@ private enum class AppPage(val label: String) {
     TODAY("Сегодня"), CALENDAR("Календарь"), FORECAST("Прогноз"), SETTINGS("Настройки")
 }
 
+private data class WorkIntervalUi(
+    val start: WorkEvent,
+    val end: WorkEvent?
+)
+
+private data class IntervalEditorState(
+    val date: LocalDate,
+    val interval: WorkIntervalUi?
+)
+
 @Composable
 fun WorkBalanceApp(viewModel: WorkViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -87,8 +106,11 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
     var page by remember { mutableStateOf(AppPage.TODAY) }
     var editedEvent by remember { mutableStateOf<WorkEvent?>(null) }
     var addingEvent by remember { mutableStateOf(false) }
+    var intervalEditor by remember { mutableStateOf<IntervalEditorState?>(null) }
     var fileMessage by remember { mutableStateOf<String?>(null) }
     var pendingImport by remember { mutableStateOf<String?>(null) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val messageScope = rememberCoroutineScope()
 
     val exportBackup = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -121,6 +143,7 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             NavigationBar {
                 AppPage.entries.forEach { item ->
@@ -160,14 +183,20 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                     state = state,
                     onMonth = viewModel::setMonth,
                     onSetDay = viewModel::setDay,
+                    onAddInterval = { date -> intervalEditor = IntervalEditorState(date, null) },
+                    onEditInterval = { date, interval ->
+                        intervalEditor = IntervalEditorState(date, interval)
+                    },
                     modifier = Modifier.padding(padding)
                 )
                 AppPage.FORECAST -> ForecastScreen(state, Modifier.padding(padding))
                 AppPage.SETTINGS -> SettingsScreen(
                     state = state,
-                    onSchedule = viewModel::setSchedule,
-                    onName = viewModel::setWorkplaceName,
-                    onReminder = viewModel::setLunchReminder,
+                    onSave = { name, work, lunch, enabled, lead ->
+                        viewModel.saveSettings(name, work, lunch, enabled, lead) {
+                            messageScope.launch { snackbarHostState.showSnackbar("Настройки сохранены") }
+                        }
+                    },
                     onExportBackup = { exportBackup.launch("WorkBalance_backup.json") },
                     onImportBackup = { importBackup.launch(arrayOf("application/json", "text/plain")) },
                     onExportCsv = {
@@ -196,6 +225,28 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                 viewModel.updateEvent(event.copy(at = at, type = type)); editedEvent = null
             },
             onDelete = { viewModel.deleteEvent(event); editedEvent = null }
+        )
+    }
+    intervalEditor?.let { editor ->
+        IntervalEditorDialog(
+            date = editor.date,
+            initial = editor.interval,
+            onDismiss = { intervalEditor = null },
+            onSave = { start, end ->
+                val initial = editor.interval
+                if (initial == null) {
+                    viewModel.addInterval(start, end)
+                } else {
+                    viewModel.saveInterval(initial.start, initial.end, start, end)
+                }
+                intervalEditor = null
+            },
+            onDelete = editor.interval?.let { interval ->
+                {
+                    viewModel.deleteInterval(interval.start, interval.end)
+                    intervalEditor = null
+                }
+            }
         )
     }
     pendingImport?.let { json ->
@@ -280,11 +331,35 @@ private fun StatusCard(state: WorkUiState) {
             if (day.isCurrentlyInside) {
                 Spacer(Modifier.height(20.dp)); HorizontalDivider()
                 MetricRow("Выход по норме", state.normalExit?.asTime() ?: "—")
-                MetricRow("Минимальный выход", state.earliestExit?.asTime() ?: "—")
+                MetricRow("Баланс в ноль", state.balanceZeroExit?.asTime() ?: "—")
+                MetricRow("По плану месяца", state.recommendedExit?.asTime() ?: "—")
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             MetricRow("Баланс до сегодня", state.previousBalanceMinutes.asSignedDuration())
-            MetricRow("Обед вне территории", day.outsideMinutes.asDuration())
+            MetricRow("С учётом сегодня", state.balanceIncludingTodayMinutes.asSignedDuration())
+            if (state.balanceIncludingTodayMinutes < 0) {
+                val hint = if (day.isCurrentlyInside && state.balanceZeroExit != null) {
+                    "До нулевого баланса ${(-state.balanceIncludingTodayMinutes).asDuration()}: оставайтесь до ${state.balanceZeroExit.asTime()}"
+                } else {
+                    "До нулевого баланса не хватает ${(-state.balanceIncludingTodayMinutes).asDuration()}"
+                }
+                Text(
+                    hint,
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            MetricRow("На территории", day.presenceMinutes.asDuration())
+            MetricRow("Вне территории всего", day.outsideMinutes.asDuration())
+            MetricRow("Обед вне территории", day.lunchOutsideMinutes.asDuration())
+            if (day.deductedLunchMinutes > 0) {
+                MetricRow("Обед на территории", day.deductedLunchMinutes.asDuration())
+            }
+            if (day.extraOutsideMinutes > 0) {
+                MetricRow("Доп. отсутствие", day.extraOutsideMinutes.asDuration())
+            }
         }
     }
 }
@@ -312,9 +387,12 @@ private fun CalendarScreen(
     state: WorkUiState,
     onMonth: (YearMonth) -> Unit,
     onSetDay: (LocalDate, DayKind) -> Unit,
+    onAddInterval: (LocalDate) -> Unit,
+    onEditInterval: (LocalDate, WorkIntervalUi) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val month = state.month ?: return
+    var selectedDay by remember { mutableStateOf<DayResult?>(null) }
     var dayForKind by remember { mutableStateOf<DayResult?>(null) }
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
@@ -325,10 +403,29 @@ private fun CalendarScreen(
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item { MonthSummary(month) }
             items(month.days, key = { it.date.toEpochDay() }) { day ->
-                DayRow(day) { dayForKind = day }
+                DayRow(day, state.data?.overrides?.get(day.date)?.kind) { selectedDay = day }
             }
             item { Spacer(Modifier.height(10.dp)) }
         }
+    }
+    selectedDay?.let { day ->
+        DayDetailsDialog(
+            day = day,
+            kind = state.data?.overrides?.get(day.date)?.kind ?: DayKind.AUTO,
+            onDismiss = { selectedDay = null },
+            onAddInterval = {
+                selectedDay = null
+                onAddInterval(day.date)
+            },
+            onEditInterval = { interval ->
+                selectedDay = null
+                onEditInterval(day.date, interval)
+            },
+            onChangeKind = {
+                selectedDay = null
+                dayForKind = day
+            }
+        )
     }
     dayForKind?.let { day ->
         DayKindDialog(day.date, onDismiss = { dayForKind = null }) { kind ->
@@ -349,7 +446,7 @@ private fun MonthSummary(month: MonthResult) {
 }
 
 @Composable
-private fun DayRow(day: DayResult, onClick: () -> Unit) {
+private fun DayRow(day: DayResult, kind: DayKind?, onClick: () -> Unit) {
     val isFree = day.requiredMinutes == 0L
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
@@ -359,7 +456,14 @@ private fun DayRow(day: DayResult, onClick: () -> Unit) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text("${day.date.dayOfMonth}, ${day.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale("ru"))}", fontWeight = FontWeight.Bold)
-                Text(if (isFree) "Выходной / особый день" else "${day.creditedMinutes.asDuration()} из ${day.requiredMinutes.asDuration()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    when {
+                        kind == DayKind.PLANNED_ABSENCE -> "Не буду — норму отработать заранее"
+                        isFree -> "Выходной / особый день"
+                        else -> "${day.creditedMinutes.asDuration()} из ${day.requiredMinutes.asDuration()}"
+                    },
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             if (!isFree || day.creditedMinutes > 0) {
                 Text(day.balanceMinutes.asSignedDuration(), fontWeight = FontWeight.Bold, color = balanceColor(day.balanceMinutes))
@@ -371,12 +475,24 @@ private fun DayRow(day: DayResult, onClick: () -> Unit) {
 @Composable
 private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
     val month = state.month ?: return
+    val progress = if (month.planMinutes == 0L) 0f else {
+        (month.creditedMinutes.toFloat() / month.planMinutes).coerceIn(0f, 1f)
+    }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
             Text("Прогноз", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(month.month.asMonthTitle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item { InfoCard("Осталось закрыть", month.remainingMinutes.asDuration(), MaterialTheme.colorScheme.primaryContainer, large = true) }
+        item {
+            Card(shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Выполнение месяца", fontWeight = FontWeight.Bold)
+                    LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
+                    Text("${(progress * 100).toInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
         item {
             InfoCard(
                 "Нужно в среднем",
@@ -402,15 +518,35 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
                 }
             }
         }
+        item {
+            Card(shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(18.dp)) {
+                    Text("Статистика месяца", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    MetricRow("На территории", month.presenceMinutes.asDuration())
+                    MetricRow("Вне территории", month.outsideMinutes.asDuration())
+                    MetricRow("Обед вне территории", month.lunchOutsideMinutes.asDuration())
+                    MetricRow("Обед на территории", month.deductedLunchMinutes.asDuration())
+                    MetricRow("Доп. отсутствие", month.extraOutsideMinutes.asDuration())
+                    MetricRow("Дней с отметками", month.workedDays.toString())
+                    MetricRow("Среднее за день", month.averageCreditedPerWorkedDay.asDuration())
+                }
+            }
+        }
+        item {
+            InfoCard(
+                "Планируемые отсутствия",
+                "Отметьте в календаре «Не буду, отработаю заранее». Месячная норма сохранится, а среднее будет рассчитано только по доступным дням.",
+                MaterialTheme.colorScheme.surfaceVariant
+            )
+        }
     }
 }
 
 @Composable
 private fun SettingsScreen(
     state: WorkUiState,
-    onSchedule: (Int, Int) -> Unit,
-    onName: (String) -> Unit,
-    onReminder: (Boolean, Int) -> Unit,
+    onSave: (String, Int, Int, Boolean, Int) -> Unit,
     onExportBackup: () -> Unit,
     onImportBackup: () -> Unit,
     onExportCsv: () -> Unit,
@@ -423,6 +559,7 @@ private fun SettingsScreen(
     var lunchMinutes by remember(state.schedule.lunchMinutes) { mutableStateOf(state.schedule.lunchMinutes.toString()) }
     var reminderEnabled by remember(state.lunchReminderEnabled) { mutableStateOf(state.lunchReminderEnabled) }
     var reminderLead by remember(state.lunchReminderLeadMinutes) { mutableIntStateOf(state.lunchReminderLeadMinutes) }
+    var showInstructions by remember { mutableStateOf(false) }
 
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item { Text("Настройки", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
@@ -433,10 +570,10 @@ private fun SettingsScreen(
             Text("Готовые режимы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = {
-                    workHours = "8"; workMinutes = "0"; lunchMinutes = "60"; onSchedule(480, 60)
+                    workHours = "8"; workMinutes = "0"; lunchMinutes = "60"
                 }, modifier = Modifier.weight(1f)) { Text("8 ч + 1 ч") }
                 OutlinedButton(onClick = {
-                    workHours = "4"; workMinutes = "0"; lunchMinutes = "30"; onSchedule(240, 30)
+                    workHours = "4"; workMinutes = "0"; lunchMinutes = "30"
                 }, modifier = Modifier.weight(1f)) { Text("4 ч + 30 мин") }
             }
         }
@@ -477,13 +614,14 @@ private fun SettingsScreen(
         item {
             Button(onClick = {
                 val totalWork = (workHours.toIntOrNull() ?: 0) * 60 + (workMinutes.toIntOrNull() ?: 0)
-                onName(name)
-                onSchedule(totalWork, lunchMinutes.toIntOrNull() ?: 0)
-                onReminder(reminderEnabled, reminderLead)
+                onSave(name, totalWork, lunchMinutes.toIntOrNull() ?: 0, reminderEnabled, reminderLead)
             }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Сохранить") }
         }
         item {
-            InfoCard("Как считается обед", "Из нахождения на территории вычитается только та часть обязательного обеда, которую вы не провели за территорией.", MaterialTheme.colorScheme.surfaceVariant)
+            OutlinedButton(onClick = { showInstructions = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                Icon(Icons.Default.HelpOutline, null)
+                Text("  Инструкция")
+            }
         }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
@@ -509,6 +647,10 @@ private fun SettingsScreen(
             }
         }
     }
+
+    if (showInstructions) {
+        InstructionsDialog(onDismiss = { showInstructions = false })
+    }
 }
 
 @Composable
@@ -531,10 +673,216 @@ private fun InfoCard(title: String, body: String, color: Color, large: Boolean =
 }
 
 @Composable
+private fun InstructionsDialog(onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Как пользоваться WorkBalance") },
+        text = {
+            Column(
+                Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                InstructionSection(
+                    "1. Вход и выход",
+                    "При проходе на территорию нажмите «Вошёл», при любом выходе — «Вышел». Повторный вход продолжит расчёт этого же дня."
+                )
+                InstructionSection(
+                    "2. Обед",
+                    "Время вне территории автоматически покрывает обязательный обед. Если выходы короче нормы, недостающая часть вычитается из присутствия. Всё сверх нормы показывается как дополнительное отсутствие."
+                )
+                InstructionSection(
+                    "3. Исправление отметок",
+                    "Нажмите отметку на главном экране или выберите день в календаре. Можно изменить время, удалить ошибочную запись или добавить пропущенный интервал."
+                )
+                InstructionSection(
+                    "4. Баланс",
+                    "«Баланс до сегодня» — сумма прошлых дней. «С учётом сегодня» меняется в реальном времени. Время «Баланс в ноль» показывает, когда сегодняшний день полностью компенсирует накопленный минус."
+                )
+                InstructionSection(
+                    "5. План месяца",
+                    "В календаре можно отметить день «Не буду, отработаю заранее». Его норма останется в месячном плане, но часы распределятся между доступными днями."
+                )
+                InstructionSection(
+                    "6. Резервная копия",
+                    "Перед обновлением или переносом телефона сохраните JSON. CSV предназначен для сверки выбранного месяца с выгрузкой проходной."
+                )
+                InstructionSection(
+                    "7. Быстрый доступ",
+                    "Добавьте виджет на домашний экран или плитку WorkBalance в шторку Android. Все кнопки используют одну базу данных."
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Понятно") } }
+    )
+}
+
+@Composable
+private fun InstructionSection(title: String, body: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(title, fontWeight = FontWeight.Bold)
+        Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
 private fun balanceColor(minutes: Long): Color = when {
     minutes > 0 -> Color(0xFF237A3B)
     minutes < 0 -> MaterialTheme.colorScheme.error
     else -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+@Composable
+private fun DayDetailsDialog(
+    day: DayResult,
+    kind: DayKind,
+    onDismiss: () -> Unit,
+    onAddInterval: () -> Unit,
+    onEditInterval: (WorkIntervalUi) -> Unit,
+    onChangeKind: () -> Unit
+) {
+    val intervals = remember(day.events) { pairIntervals(day.events) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(day.date.asDate()) },
+        text = {
+            Column(
+                Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(kind.title, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                    Column(Modifier.padding(14.dp)) {
+                        MetricRow("На территории", day.presenceMinutes.asDuration())
+                        MetricRow("Вне территории", day.outsideMinutes.asDuration())
+                        MetricRow("Обед вне территории", day.lunchOutsideMinutes.asDuration())
+                        MetricRow("Обед на территории", day.deductedLunchMinutes.asDuration())
+                        if (day.extraOutsideMinutes > 0) {
+                            MetricRow("Доп. отсутствие", day.extraOutsideMinutes.asDuration())
+                        }
+                        MetricRow("Зачтено", day.creditedMinutes.asDuration())
+                        MetricRow("Баланс дня", day.balanceMinutes.asSignedDuration())
+                    }
+                }
+                Text("Рабочие интервалы", fontWeight = FontWeight.Bold)
+                if (intervals.isEmpty()) {
+                    Text("Интервалов пока нет", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                intervals.forEach { interval ->
+                    Surface(
+                        Modifier.fillMaxWidth().clickable { onEditInterval(interval) },
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    ) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Schedule, null, tint = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "${interval.start.at.asTime()} — ${interval.end?.at?.asTime() ?: "не закрыт"}",
+                                Modifier.weight(1f).padding(start = 12.dp),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Icon(Icons.Default.Edit, "Исправить")
+                        }
+                    }
+                }
+                if (day.warnings.isNotEmpty()) {
+                    Text(
+                        day.warnings.joinToString("\n"),
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                Button(onClick = onAddInterval, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.Add, null)
+                    Text(" Добавить интервал")
+                }
+                OutlinedButton(onClick = onChangeKind, modifier = Modifier.fillMaxWidth()) {
+                    Text("Тип дня: ${kind.title}")
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
+}
+
+private fun pairIntervals(events: List<WorkEvent>): List<WorkIntervalUi> {
+    val result = mutableListOf<WorkIntervalUi>()
+    var open: WorkEvent? = null
+    events.sortedWith(compareBy<WorkEvent> { it.at }.thenBy { it.id }).forEach { event ->
+        when (event.type) {
+            EventType.IN -> {
+                if (open != null) result += WorkIntervalUi(open!!, null)
+                open = event
+            }
+            EventType.OUT -> {
+                open?.let { result += WorkIntervalUi(it, event) }
+                open = null
+            }
+        }
+    }
+    open?.let { result += WorkIntervalUi(it, null) }
+    return result
+}
+
+@Composable
+private fun IntervalEditorDialog(
+    date: LocalDate,
+    initial: WorkIntervalUi?,
+    onDismiss: () -> Unit,
+    onSave: (LocalDateTime, LocalDateTime) -> Unit,
+    onDelete: (() -> Unit)? = null
+) {
+    val context = LocalContext.current
+    var start by remember(initial) {
+        mutableStateOf(initial?.start?.at?.toLocalTime() ?: LocalTime.of(9, 0))
+    }
+    var end by remember(initial) {
+        mutableStateOf(
+            initial?.end?.at?.toLocalTime()
+                ?: if (date == LocalDate.now()) LocalTime.now().withSecond(0).withNano(0) else LocalTime.of(18, 0)
+        )
+    }
+    val valid = end.isAfter(start)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Добавить интервал" else "Исправить интервал") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(date.asDate(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(
+                    onClick = {
+                        TimePickerDialog(context, { _, hour, minute -> start = LocalTime.of(hour, minute) }, start.hour, start.minute, true).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Вход: ${LocalDateTime.of(date, start).asTime()}") }
+                OutlinedButton(
+                    onClick = {
+                        TimePickerDialog(context, { _, hour, minute -> end = LocalTime.of(hour, minute) }, end.hour, end.minute, true).show()
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Выход: ${LocalDateTime.of(date, end).asTime()}") }
+                if (!valid) {
+                    Text("Выход должен быть позже входа", color = MaterialTheme.colorScheme.error)
+                }
+                if (onDelete != null) {
+                    TextButton(
+                        onClick = onDelete,
+                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Default.Delete, null)
+                        Text(" Удалить интервал")
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(LocalDateTime.of(date, start), LocalDateTime.of(date, end)) },
+                enabled = valid
+            ) { Text("Сохранить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
 }
 
 @Composable

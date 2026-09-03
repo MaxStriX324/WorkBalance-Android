@@ -102,7 +102,8 @@ object BackupCodec {
         val locale = Locale("ru")
         val header = listOf(
             "Дата", "День недели", "Норма", "Первый вход", "Последний выход",
-            "Отметки", "На территории", "Вне территории", "Вычет обеда",
+            "Отметки", "На территории", "Вне территории всего", "Обед вне территории",
+            "Обед на территории", "Дополнительное отсутствие",
             "Зачтено", "Баланс", "Предупреждения"
         )
         val rows = month.days.map { day ->
@@ -115,7 +116,9 @@ object BackupCodec {
                 day.events.joinToString(" | ") { "${it.at.toLocalTime().toString().take(5)} ${if (it.type == EventType.IN) "вход" else "выход"}" },
                 duration(day.presenceMinutes),
                 duration(day.outsideMinutes),
+                duration(day.lunchOutsideMinutes),
                 duration(day.deductedLunchMinutes),
+                duration(day.extraOutsideMinutes),
                 duration(day.creditedMinutes),
                 signedDuration(day.balanceMinutes),
                 day.warnings.joinToString(" | ")
