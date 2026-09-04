@@ -20,6 +20,7 @@ import ru.maxstrix.workbalance.R
 object LunchReminderScheduler {
     private const val REQUEST_CODE = 4102
     private const val EXTRA_LEAD_MINUTES = "lead_minutes"
+    internal const val NOTIFICATION_ID = 4104
 
     fun schedule(context: Context, delayMinutes: Long, leadMinutes: Int) {
         val alarmManager = context.getSystemService(AlarmManager::class.java)
@@ -31,6 +32,7 @@ object LunchReminderScheduler {
 
     fun cancel(context: Context) {
         context.getSystemService(AlarmManager::class.java).cancel(pendingIntent(context, 15))
+        NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
     }
 
     private fun pendingIntent(context: Context, leadMinutes: Int): PendingIntent {
@@ -77,11 +79,10 @@ class LunchReminderReceiver : BroadcastReceiver() {
             .setAutoCancel(true)
             .setContentIntent(openApp)
             .build()
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, notification)
+        NotificationManagerCompat.from(context).notify(LunchReminderScheduler.NOTIFICATION_ID, notification)
     }
 
     companion object {
         private const val CHANNEL_ID = "lunch_reminder"
-        private const val NOTIFICATION_ID = 4104
     }
 }

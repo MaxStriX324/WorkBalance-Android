@@ -378,34 +378,50 @@ private fun StatusCard(state: WorkUiState) {
             if (day.isCurrentlyInside) {
                 Spacer(Modifier.height(20.dp)); HorizontalDivider()
                 MetricRow("Выход по норме", state.normalExit?.asTime() ?: "—")
-                MetricRow("Баланс в ноль", state.balanceZeroExit?.asTime() ?: "—")
                 MetricRow("По плану месяца", state.recommendedExit?.asTime() ?: "—")
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             MetricRow("Баланс до сегодня", state.previousBalanceMinutes.asSignedDuration())
-            MetricRow("С учётом сегодня", state.balanceIncludingTodayMinutes.asSignedDuration())
-            if (state.balanceIncludingTodayMinutes < 0) {
-                val hint = if (day.isCurrentlyInside && state.balanceZeroExit != null) {
-                    "До нулевого баланса ${(-state.balanceIncludingTodayMinutes).asDuration()}: оставайтесь до ${state.balanceZeroExit.asTime()}"
-                } else {
-                    "До нулевого баланса не хватает ${(-state.balanceIncludingTodayMinutes).asDuration()}"
+            when {
+                state.balanceIncludingTodayMinutes < 0 -> {
+                    val hint = if (day.isCurrentlyInside && state.balanceZeroExit != null) {
+                        "До нулевого баланса ${(-state.balanceIncludingTodayMinutes).asDuration()}: оставайтесь до ${state.balanceZeroExit.asTime()}"
+                    } else {
+                        "До нулевого баланса не хватает ${(-state.balanceIncludingTodayMinutes).asDuration()}"
+                    }
+                    Text(
+                        hint,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
                 }
-                Text(
-                    hint,
+                state.balanceIncludingTodayMinutes > 0 -> Text(
+                    "Текущий запас: ${state.balanceIncludingTodayMinutes.asSignedDuration()}",
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                    color = MaterialTheme.colorScheme.error,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.SemiBold
+                )
+                day.events.isNotEmpty() -> Text(
+                    "Текущий баланс полностью закрыт",
+                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.SemiBold
                 )
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             MetricRow("На территории", day.presenceMinutes.asDuration())
-            MetricRow("Вне территории всего", day.outsideMinutes.asDuration())
-            MetricRow("Обед вне территории", day.lunchOutsideMinutes.asDuration())
-            if (day.deductedLunchMinutes > 0) {
-                MetricRow("Обед на территории", day.deductedLunchMinutes.asDuration())
-            }
-            if (day.extraOutsideMinutes > 0) {
-                MetricRow("Доп. отсутствие", day.extraOutsideMinutes.asDuration())
+            if (state.schedule.lunchMinutes > 0) {
+                MetricRow("Вне территории всего", day.outsideMinutes.asDuration())
+                MetricRow("Обед вне территории", day.lunchOutsideMinutes.asDuration())
+                if (day.deductedLunchMinutes > 0) {
+                    MetricRow("Обед на территории", day.deductedLunchMinutes.asDuration())
+                }
+                if (day.extraOutsideMinutes > 0) {
+                    MetricRow("Доп. отсутствие", day.extraOutsideMinutes.asDuration())
+                }
+            } else {
+                MetricRow("Вне территории", day.outsideMinutes.asDuration())
             }
         }
     }
@@ -459,6 +475,7 @@ private fun CalendarScreen(
         DayDetailsDialog(
             day = day,
             kind = state.data?.overrides?.get(day.date)?.kind ?: DayKind.AUTO,
+            showLunchBreakdown = state.schedule.lunchMinutes > 0,
             onDismiss = { selectedDay = null },
             onAddInterval = {
                 selectedDay = null
@@ -543,16 +560,22 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
         item {
             InfoCard(
                 "Нужно в среднем",
-                if (month.remainingWorkDays > 0) "${month.averageMinutesPerRemainingDay.asDuration()} в день\nОсталось рабочих дней: ${month.remainingWorkDays}" else "Рабочих дней не осталось",
+                if (month.remainingWorkDays > 0) {
+                    "${month.averageMinutesPerRemainingDay.asDuration()} в день\nДней для отработки: ${month.remainingWorkDays}"
+                } else {
+                    "Дней для отработки не осталось"
+                },
                 MaterialTheme.colorScheme.secondaryContainer,
                 large = true
             )
         }
         item {
+            val currentMonth = month.month == YearMonth.from(state.now)
+            val paceBalance = if (currentMonth) state.previousBalanceMinutes else month.balanceToDateMinutes
             val message = when {
-                month.balanceToDateMinutes > 0 -> "Накоплен запас ${month.balanceToDateMinutes.asDuration()}. Его можно использовать для более раннего ухода."
-                month.balanceToDateMinutes < 0 -> "Нужно компенсировать ${(-month.balanceToDateMinutes).asDuration()} в оставшиеся рабочие дни."
-                else -> "Идёте точно по месячному плану."
+                paceBalance > 0 -> "До начала сегодняшнего дня накоплен запас ${paceBalance.asDuration()}. Его можно использовать для более раннего ухода."
+                paceBalance < 0 -> "До начала сегодняшнего дня не хватало ${(-paceBalance).asDuration()}. Новая средняя норма уже учитывает этот минус."
+                else -> "До начала сегодняшнего дня вы шли точно по месячному плану."
             }
             InfoCard("Текущий темп", message, MaterialTheme.colorScheme.surfaceVariant)
         }
@@ -572,9 +595,11 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
                     Spacer(Modifier.height(6.dp))
                     MetricRow("На территории", month.presenceMinutes.asDuration())
                     MetricRow("Вне территории", month.outsideMinutes.asDuration())
-                    MetricRow("Обед вне территории", month.lunchOutsideMinutes.asDuration())
-                    MetricRow("Обед на территории", month.deductedLunchMinutes.asDuration())
-                    MetricRow("Доп. отсутствие", month.extraOutsideMinutes.asDuration())
+                    if (state.schedule.lunchMinutes > 0) {
+                        MetricRow("Обед вне территории", month.lunchOutsideMinutes.asDuration())
+                        MetricRow("Обед на территории", month.deductedLunchMinutes.asDuration())
+                        MetricRow("Доп. отсутствие", month.extraOutsideMinutes.asDuration())
+                    }
                     MetricRow("Дней с отметками", month.workedDays.toString())
                     MetricRow("Среднее за день", month.averageCreditedPerWorkedDay.asDuration())
                 }
@@ -791,7 +816,7 @@ private fun InstructionsDialog(onDismiss: () -> Unit) {
                 )
                 InstructionSection(
                     "4. Баланс",
-                    "«Баланс до сегодня» — сумма прошлых дней. «С учётом сегодня» меняется в реальном времени. Время «Баланс в ноль» показывает, когда сегодняшний день полностью компенсирует накопленный минус."
+                    "«Баланс до сегодня» — сумма прошлых дней. Красная подсказка показывает текущую нехватку с учётом сегодняшнего дня и время, до которого нужно остаться для полного закрытия минуса."
                 )
                 InstructionSection(
                     "5. План месяца",
@@ -834,6 +859,7 @@ private fun balanceColor(minutes: Long): Color = when {
 private fun DayDetailsDialog(
     day: DayResult,
     kind: DayKind,
+    showLunchBreakdown: Boolean,
     onDismiss: () -> Unit,
     onAddInterval: () -> Unit,
     onEditInterval: (WorkIntervalUi) -> Unit,
@@ -853,10 +879,12 @@ private fun DayDetailsDialog(
                     Column(Modifier.padding(14.dp)) {
                         MetricRow("На территории", day.presenceMinutes.asDuration())
                         MetricRow("Вне территории", day.outsideMinutes.asDuration())
-                        MetricRow("Обед вне территории", day.lunchOutsideMinutes.asDuration())
-                        MetricRow("Обед на территории", day.deductedLunchMinutes.asDuration())
-                        if (day.extraOutsideMinutes > 0) {
-                            MetricRow("Доп. отсутствие", day.extraOutsideMinutes.asDuration())
+                        if (showLunchBreakdown) {
+                            MetricRow("Обед вне территории", day.lunchOutsideMinutes.asDuration())
+                            MetricRow("Обед на территории", day.deductedLunchMinutes.asDuration())
+                            if (day.extraOutsideMinutes > 0) {
+                                MetricRow("Доп. отсутствие", day.extraOutsideMinutes.asDuration())
+                            }
                         }
                         MetricRow("Зачтено", day.creditedMinutes.asDuration())
                         MetricRow("Баланс дня", day.balanceMinutes.asSignedDuration())

@@ -137,6 +137,17 @@ object WorkTimeCalculator {
                 overrides[it.date]?.kind != DayKind.PLANNED_ABSENCE
         }
         val remaining = max(0, plan - credited)
+        val todayIsAvailable = days.any {
+            it.date == today &&
+                it.requiredMinutes > 0 &&
+                overrides[it.date]?.kind != DayKind.PLANNED_ABSENCE
+        }
+        val creditedBeforeAveragePeriod = days
+            .filter { day ->
+                day.date.isBefore(today) || (day.date == today && !todayIsAvailable)
+            }
+            .sumOf { it.creditedMinutes }
+        val remainingAtAveragePeriodStart = max(0, plan - creditedBeforeAveragePeriod)
         val workedDays = days.count { it.presenceMinutes > 0 }
 
         return MonthResult(
@@ -146,7 +157,9 @@ object WorkTimeCalculator {
             balanceToDateMinutes = creditedThroughToday - plannedThroughToday,
             remainingMinutes = remaining,
             remainingWorkDays = remainingDays,
-            averageMinutesPerRemainingDay = if (remainingDays == 0) 0 else (remaining + remainingDays - 1) / remainingDays,
+            averageMinutesPerRemainingDay = if (remainingDays == 0) 0 else {
+                (remainingAtAveragePeriodStart + remainingDays - 1) / remainingDays
+            },
             presenceMinutes = days.sumOf { it.presenceMinutes },
             outsideMinutes = days.sumOf { it.outsideMinutes },
             lunchOutsideMinutes = days.sumOf { it.lunchOutsideMinutes },

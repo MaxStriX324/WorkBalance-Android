@@ -178,4 +178,46 @@ class WorkTimeCalculatorTest {
         assertEquals(10_560, result.planMinutes)
         assertEquals(21, result.remainingWorkDays)
     }
+
+    @Test
+    fun `partial current day does not make daily average artificially lower`() {
+        val events = listOf(
+            WorkEvent(1, LocalDateTime.of(2026, 9, 1, 9, 0), EventType.IN),
+            WorkEvent(2, LocalDateTime.of(2026, 9, 1, 18, 0), EventType.OUT),
+            WorkEvent(3, LocalDateTime.of(2026, 9, 2, 9, 0), EventType.IN),
+            WorkEvent(4, LocalDateTime.of(2026, 9, 2, 18, 0), EventType.OUT),
+            WorkEvent(5, LocalDateTime.of(2026, 9, 3, 9, 0), EventType.IN),
+            WorkEvent(6, LocalDateTime.of(2026, 9, 3, 15, 58), EventType.OUT),
+            WorkEvent(7, LocalDateTime.of(2026, 9, 4, 8, 44), EventType.IN),
+            WorkEvent(8, LocalDateTime.of(2026, 9, 4, 10, 0), EventType.OUT),
+            WorkEvent(9, LocalDateTime.of(2026, 9, 4, 10, 5), EventType.IN)
+        )
+
+        val result = WorkTimeCalculator.calculateMonth(
+            YearMonth.of(2026, 9),
+            events,
+            full,
+            emptyMap(),
+            now = LocalDateTime.of(2026, 9, 4, 12, 22)
+        )
+
+        assertEquals(9_084, result.remainingMinutes)
+        assertEquals(19, result.remainingWorkDays)
+        assertEquals(487, result.averageMinutesPerRemainingDay)
+    }
+
+    @Test
+    fun `zero lunch schedule has no lunch components`() {
+        val withoutLunch = Schedule(workMinutes = 480, lunchMinutes = 0)
+        val result = WorkTimeCalculator.calculateDay(
+            date,
+            listOf(event(9, 0, EventType.IN, 1)),
+            withoutLunch,
+            now = date.atTime(11, 0)
+        )
+
+        assertEquals(120, result.creditedMinutes)
+        assertEquals(0, result.lunchOutsideMinutes)
+        assertEquals(0, result.deductedLunchMinutes)
+    }
 }
