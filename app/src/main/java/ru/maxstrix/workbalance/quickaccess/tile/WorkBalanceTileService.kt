@@ -44,7 +44,8 @@ class WorkBalanceTileService : TileService() {
             val now = LocalDateTime.now()
             val date = now.toLocalDate()
             val today = WorkTimeCalculator.calculateDay(
-                date, data.events, data.schedule, data.overrides[date], now
+                date, data.events, data.schedule, data.overrides[date], now,
+                data.productionCalendar
             )
             tile.label = "WorkBalance"
             tile.state = if (today.isCurrentlyInside) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE

@@ -14,6 +14,51 @@ class WorkTimeCalculatorTest {
     private fun event(hour: Int, minute: Int, type: EventType, id: Long) =
         WorkEvent(id, LocalDateTime.of(date.year, date.monthValue, date.dayOfMonth, hour, minute), type)
 
+    private fun productionCalendar(
+        shortenedMode: ShortenedDayMode = ShortenedDayMode.AUTOMATIC,
+        includeSaratov: Boolean = false
+    ): ProductionCalendar {
+        val federalDaysOff = listOf(
+            "2026-01-01", "2026-01-02", "2026-01-05", "2026-01-06", "2026-01-07",
+            "2026-01-08", "2026-01-09", "2026-02-23", "2026-03-09", "2026-05-01",
+            "2026-05-11", "2026-06-12", "2026-11-04", "2026-12-31"
+        ).map { CalendarRule(LocalDate.parse(it), CalendarDayType.DAY_OFF, "Праздник") }
+        val federalShortened = listOf("2026-04-30", "2026-05-08", "2026-06-11", "2026-11-03")
+            .map { CalendarRule(LocalDate.parse(it), CalendarDayType.SHORTENED, "Сокращённый день", 60) }
+        val federal = CalendarPack(
+            id = "RU-2026-test",
+            year = 2026,
+            regionCode = null,
+            title = "Россия, 2026",
+            revision = "test",
+            official = true,
+            source = "test",
+            rules = federalDaysOff + federalShortened
+        )
+        val saratov = CalendarPack(
+            id = "RU-SAR-2026-test",
+            year = 2026,
+            regionCode = CalendarRegion.SARATOV.code,
+            title = "Саратовская область, 2026",
+            revision = "test",
+            official = true,
+            source = "test",
+            rules = listOf(
+                CalendarRule(LocalDate.of(2026, 4, 20), CalendarDayType.SHORTENED, "Перед Радоницей", 60),
+                CalendarRule(LocalDate.of(2026, 4, 21), CalendarDayType.DAY_OFF, "Радоница")
+            )
+        )
+        return ProductionCalendar(
+            settings = ProductionCalendarSettings(
+                federalEnabled = true,
+                regionalEnabled = includeSaratov,
+                region = CalendarRegion.SARATOV,
+                shortenedDayMode = shortenedMode
+            ),
+            packs = if (includeSaratov) listOf(federal, saratov) else listOf(federal)
+        )
+    }
+
     @Test
     fun `nine hours on site with no exit credits eight hours`() {
         val result = WorkTimeCalculator.calculateDay(
@@ -219,5 +264,82 @@ class WorkTimeCalculatorTest {
         assertEquals(120, result.creditedMinutes)
         assertEquals(0, result.lunchOutsideMinutes)
         assertEquals(0, result.deductedLunchMinutes)
+    }
+
+    @Test
+    fun `federal calendar calculates official 2026 annual norm`() {
+        val calendar = productionCalendar()
+        val annualMinutes = (1..12).sumOf { month ->
+            WorkTimeCalculator.calculateMonth(
+                YearMonth.of(2026, month), emptyList(), full, emptyMap(),
+                now = LocalDateTime.of(2026, 1, 1, 0, 0),
+                productionCalendar = calendar
+            ).planMinutes
+        }
+
+        assertEquals(1_972L * 60L, annualMinutes)
+    }
+
+    @Test
+    fun `saratov calendar adds radonitsa and calculates regional April norm`() {
+        val calendar = productionCalendar(includeSaratov = true)
+        val result = WorkTimeCalculator.calculateMonth(
+            YearMonth.of(2026, 4), emptyList(), full, emptyMap(),
+            now = LocalDateTime.of(2026, 4, 1, 0, 0),
+            productionCalendar = calendar
+        )
+        val annualMinutes = (1..12).sumOf { month ->
+            WorkTimeCalculator.calculateMonth(
+                YearMonth.of(2026, month), emptyList(), full, emptyMap(),
+                now = LocalDateTime.of(2026, 1, 1, 0, 0),
+                productionCalendar = calendar
+            ).planMinutes
+        }
+
+        assertEquals(166L * 60L, result.planMinutes)
+        assertEquals(1_963L * 60L, annualMinutes)
+        assertEquals(0L, result.days.first { it.date == LocalDate.of(2026, 4, 21) }.requiredMinutes)
+    }
+
+    @Test
+    fun `ask mode keeps full norm until shortened day decision is made`() {
+        val shortenedDate = LocalDate.of(2026, 4, 30)
+        val calendar = productionCalendar(shortenedMode = ShortenedDayMode.ASK)
+        val undecided = WorkTimeCalculator.calculateDay(
+            shortenedDate, emptyList(), full,
+            now = shortenedDate.atStartOfDay(), productionCalendar = calendar
+        )
+        val accepted = WorkTimeCalculator.calculateDay(
+            shortenedDate, emptyList(), full,
+            override = DayOverride(shortenedDate, DayKind.AUTO, 420),
+            now = shortenedDate.atStartOfDay(), productionCalendar = calendar
+        )
+
+        assertEquals(480L, undecided.requiredMinutes)
+        assertTrue(undecided.shortenedDecisionNeeded)
+        assertEquals(420L, accepted.requiredMinutes)
+        assertTrue(accepted.shortenedApplied)
+    }
+
+    @Test
+    fun `manual workday has priority over regional holiday`() {
+        val radonitsa = LocalDate.of(2026, 4, 21)
+        val required = WorkTimeCalculator.requiredMinutes(
+            radonitsa,
+            full,
+            DayOverride(radonitsa, DayKind.WORKDAY),
+            productionCalendar(includeSaratov = true)
+        )
+
+        assertEquals(480L, required)
+    }
+
+    @Test
+    fun `missing future calendar uses weekly schedule and reports missing year`() {
+        val calendar = productionCalendar()
+        val monday = LocalDate.of(2027, 1, 4)
+
+        assertTrue(!calendar.hasYear(2027))
+        assertEquals(480L, WorkTimeCalculator.requiredMinutes(monday, full, null, calendar))
     }
 }

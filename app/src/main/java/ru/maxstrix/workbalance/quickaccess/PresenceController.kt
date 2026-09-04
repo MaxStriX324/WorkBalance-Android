@@ -20,7 +20,8 @@ class PresenceController(context: Context) {
             rawEvents = data.events,
             schedule = data.schedule,
             override = data.overrides[date],
-            now = now
+            now = now,
+            productionCalendar = data.productionCalendar
         )
         val leaving = today.isCurrentlyInside
         val type = if (leaving) EventType.OUT else EventType.IN

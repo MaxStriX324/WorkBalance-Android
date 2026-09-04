@@ -11,17 +11,35 @@ object WorkTimeCalculator {
     fun requiredMinutes(
         date: LocalDate,
         schedule: Schedule,
-        override: DayOverride?
+        override: DayOverride?,
+        productionCalendar: ProductionCalendar = ProductionCalendar()
     ): Long {
         if (override?.customWorkMinutes != null) return override.customWorkMinutes.toLong()
-        return when (override?.kind ?: DayKind.AUTO) {
+        val manualKind = override?.kind ?: DayKind.AUTO
+        if (manualKind != DayKind.AUTO) return when (manualKind) {
             DayKind.WORKDAY -> schedule.workMinutes.toLong()
             DayKind.BUSINESS_TRIP -> schedule.workMinutes.toLong()
             DayKind.PLANNED_ABSENCE -> schedule.workMinutes.toLong()
-            DayKind.AUTO -> if (date.dayOfWeek in schedule.workingDays) schedule.workMinutes.toLong() else 0
             DayKind.WEEKEND, DayKind.HOLIDAY, DayKind.VACATION,
             DayKind.SICK, DayKind.DAY_OFF -> 0
+            DayKind.AUTO -> error("AUTO обработан выше")
         }
+
+        val calendarInfo = productionCalendar.dayInfo(date)
+        val baseMinutes = when (calendarInfo?.dayType) {
+            CalendarDayType.DAY_OFF -> 0L
+            CalendarDayType.WORKDAY -> schedule.workMinutes.toLong()
+            CalendarDayType.SHORTENED, null -> {
+                if (date.dayOfWeek in schedule.workingDays) schedule.workMinutes.toLong() else 0L
+            }
+        }
+        val reduction = if (
+            baseMinutes > 0 &&
+            productionCalendar.settings.shortenedDayMode == ShortenedDayMode.AUTOMATIC
+        ) {
+            calendarInfo?.shortenedByMinutes?.toLong() ?: 0L
+        } else 0L
+        return max(0, baseMinutes - reduction)
     }
 
     fun calculateDay(
@@ -29,7 +47,8 @@ object WorkTimeCalculator {
         rawEvents: List<WorkEvent>,
         schedule: Schedule,
         override: DayOverride? = null,
-        now: LocalDateTime = LocalDateTime.now()
+        now: LocalDateTime = LocalDateTime.now(),
+        productionCalendar: ProductionCalendar = ProductionCalendar()
     ): DayResult {
         val dayStart = date.atStartOfDay()
         val dayEnd = date.plusDays(1).atStartOfDay()
@@ -91,7 +110,23 @@ object WorkTimeCalculator {
         val extraOutside = max(0, outside - lunchRequired)
         val missingLunch = if (firstIn == null) 0 else max(0, lunchRequired - outside)
         val credited = max(0, presence - missingLunch)
-        val required = requiredMinutes(date, schedule, override)
+        val calendarInfo = productionCalendar.dayInfo(date)
+        val required = requiredMinutes(date, schedule, override, productionCalendar)
+        val hasManualDecision = override?.let {
+            it.customWorkMinutes != null || it.kind != DayKind.AUTO
+        } ?: false
+        val shortenedDecisionNeeded = calendarInfo?.shortenedByMinutes?.let { reduction ->
+            reduction > 0 &&
+                required > 0 &&
+                !hasManualDecision &&
+                productionCalendar.settings.shortenedDayMode == ShortenedDayMode.ASK
+        } ?: false
+        val shortenedApplied = calendarInfo?.shortenedByMinutes?.let { reduction ->
+            reduction > 0 && required > 0 && when {
+                hasManualDecision -> override?.customWorkMinutes == max(0, schedule.workMinutes - reduction)
+                else -> productionCalendar.settings.shortenedDayMode == ShortenedDayMode.AUTOMATIC
+            }
+        } ?: false
 
         return DayResult(
             date = date,
@@ -107,7 +142,11 @@ object WorkTimeCalculator {
             requiredMinutes = required,
             balanceMinutes = credited - required,
             isCurrentlyInside = insideSince != null,
-            warnings = warnings
+            warnings = warnings,
+            calendarNote = calendarInfo?.description?.takeIf { it.isNotBlank() },
+            shortenedByMinutes = calendarInfo?.shortenedByMinutes ?: 0,
+            shortenedApplied = shortenedApplied,
+            shortenedDecisionNeeded = shortenedDecisionNeeded
         )
     }
 
@@ -116,12 +155,13 @@ object WorkTimeCalculator {
         events: List<WorkEvent>,
         schedule: Schedule,
         overrides: Map<LocalDate, DayOverride>,
-        now: LocalDateTime = LocalDateTime.now()
+        now: LocalDateTime = LocalDateTime.now(),
+        productionCalendar: ProductionCalendar = ProductionCalendar()
     ): MonthResult {
         val today = now.toLocalDate()
         val days = (1..month.lengthOfMonth()).map { day ->
             val date = month.atDay(day)
-            calculateDay(date, events, schedule, overrides[date], now)
+            calculateDay(date, events, schedule, overrides[date], now, productionCalendar)
         }
         val plan = days.sumOf { it.requiredMinutes }
         val credited = days.sumOf { it.creditedMinutes }

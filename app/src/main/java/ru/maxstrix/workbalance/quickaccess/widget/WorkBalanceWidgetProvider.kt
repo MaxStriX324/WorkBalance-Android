@@ -58,10 +58,12 @@ class WorkBalanceWidgetProvider : AppWidgetProvider() {
             val now = LocalDateTime.now()
             val date = now.toLocalDate()
             val today = WorkTimeCalculator.calculateDay(
-                date, data.events, data.schedule, data.overrides[date], now
+                date, data.events, data.schedule, data.overrides[date], now,
+                data.productionCalendar
             )
             val month = WorkTimeCalculator.calculateMonth(
-                YearMonth.from(date), data.events, data.schedule, data.overrides, now
+                YearMonth.from(date), data.events, data.schedule, data.overrides, now,
+                data.productionCalendar
             )
             val need = WorkTimeCalculator.minutesUntilCreditedTarget(today, today.requiredMinutes)
             val exitTime = if (today.isCurrentlyInside) now.plusMinutes(need).format(timeFormatter) else "—"
