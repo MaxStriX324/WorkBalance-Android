@@ -6,6 +6,7 @@ import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayOverride
 import ru.maxstrix.workbalance.domain.CalendarRegion
 import ru.maxstrix.workbalance.domain.EventType
+import ru.maxstrix.workbalance.domain.ForgottenMarkReminderSettings
 import ru.maxstrix.workbalance.domain.ProductionCalendar
 import ru.maxstrix.workbalance.domain.ProductionCalendarSettings
 import ru.maxstrix.workbalance.domain.Schedule
@@ -13,6 +14,7 @@ import ru.maxstrix.workbalance.domain.ShortenedDayMode
 import ru.maxstrix.workbalance.domain.WorkEvent
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 
 data class WorkData(
     val events: List<WorkEvent>,
@@ -21,6 +23,7 @@ data class WorkData(
     val workplaceName: String,
     val lunchReminderEnabled: Boolean,
     val lunchReminderLeadMinutes: Int,
+    val forgottenMarkReminderSettings: ForgottenMarkReminderSettings,
     val automaticUpdateCheckEnabled: Boolean,
     val productionCalendar: ProductionCalendar = ProductionCalendar(),
     val availableCalendarYears: Set<Int> = emptySet()
@@ -111,6 +114,17 @@ class WorkRepository(
         dao.putSetting(SettingEntity(KEY_AUTOMATIC_UPDATE_CHECK, enabled.toString()))
     }
 
+    suspend fun setForgottenMarkReminder(settings: ForgottenMarkReminderSettings) {
+        dao.putSettings(
+            listOf(
+                SettingEntity(KEY_FORGOTTEN_MARK_ENABLED, settings.enabled.toString()),
+                SettingEntity(KEY_FORGOTTEN_ENTRY_TIME, settings.entryCheckTime.toString()),
+                SettingEntity(KEY_FORGOTTEN_EXIT_GRACE, settings.exitGraceMinutes.coerceIn(0, 240).toString()),
+                SettingEntity(KEY_FORGOTTEN_SNOOZE, settings.snoozeMinutes.coerceIn(5, 240).toString())
+            )
+        )
+    }
+
     suspend fun setProductionCalendarSettings(settings: ProductionCalendarSettings) {
         dao.putSettings(
             listOf(
@@ -134,6 +148,10 @@ class WorkRepository(
         const val KEY_LUNCH_REMINDER_ENABLED = "lunch_reminder_enabled"
         const val KEY_LUNCH_REMINDER_LEAD = "lunch_reminder_lead"
         const val KEY_AUTOMATIC_UPDATE_CHECK = "automatic_update_check"
+        const val KEY_FORGOTTEN_MARK_ENABLED = "forgotten_mark_enabled"
+        const val KEY_FORGOTTEN_ENTRY_TIME = "forgotten_entry_time"
+        const val KEY_FORGOTTEN_EXIT_GRACE = "forgotten_exit_grace"
+        const val KEY_FORGOTTEN_SNOOZE = "forgotten_snooze"
         const val KEY_CALENDAR_FEDERAL_ENABLED = "calendar_federal_enabled"
         const val KEY_CALENDAR_REGIONAL_ENABLED = "calendar_regional_enabled"
         const val KEY_CALENDAR_REGION = "calendar_region"
@@ -168,6 +186,16 @@ class WorkRepository(
             workplaceName = settings[KEY_WORKPLACE_NAME] ?: "Работа",
             lunchReminderEnabled = settings[KEY_LUNCH_REMINDER_ENABLED]?.toBooleanStrictOrNull() ?: true,
             lunchReminderLeadMinutes = settings[KEY_LUNCH_REMINDER_LEAD]?.toIntOrNull() ?: 15,
+            forgottenMarkReminderSettings = ForgottenMarkReminderSettings(
+                enabled = settings[KEY_FORGOTTEN_MARK_ENABLED]?.toBooleanStrictOrNull() ?: false,
+                entryCheckTime = settings[KEY_FORGOTTEN_ENTRY_TIME]
+                    ?.let { value -> runCatching { LocalTime.parse(value) }.getOrNull() }
+                    ?: LocalTime.of(10, 0),
+                exitGraceMinutes = settings[KEY_FORGOTTEN_EXIT_GRACE]
+                    ?.toIntOrNull()?.coerceIn(0, 240) ?: 60,
+                snoozeMinutes = settings[KEY_FORGOTTEN_SNOOZE]
+                    ?.toIntOrNull()?.coerceIn(5, 240) ?: 30
+            ),
             automaticUpdateCheckEnabled = settings[KEY_AUTOMATIC_UPDATE_CHECK]
                 ?.toBooleanStrictOrNull() ?: true,
             productionCalendar = calendarProvider.calendar(calendarSettings),

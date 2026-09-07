@@ -3,6 +3,7 @@ package ru.maxstrix.workbalance.domain
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 import java.time.YearMonth
 
 enum class EventType { IN, OUT }
@@ -32,6 +33,13 @@ data class Schedule(
         DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY,
         DayOfWeek.THURSDAY, DayOfWeek.FRIDAY
     )
+)
+
+data class ForgottenMarkReminderSettings(
+    val enabled: Boolean = false,
+    val entryCheckTime: LocalTime = LocalTime.of(10, 0),
+    val exitGraceMinutes: Int = 60,
+    val snoozeMinutes: Int = 30
 )
 
 data class DayOverride(

@@ -80,6 +80,7 @@ import ru.maxstrix.workbalance.domain.CalendarRegion
 import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayResult
 import ru.maxstrix.workbalance.domain.EventType
+import ru.maxstrix.workbalance.domain.ForgottenMarkReminderSettings
 import ru.maxstrix.workbalance.domain.MonthResult
 import ru.maxstrix.workbalance.domain.ProductionCalendarSettings
 import ru.maxstrix.workbalance.domain.ShortenedDayMode
@@ -212,8 +213,11 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                 AppPage.FORECAST -> ForecastScreen(state, Modifier.padding(padding))
                 AppPage.SETTINGS -> SettingsScreen(
                     state = state,
-                    onSave = { name, work, lunch, enabled, lead, updateCheckEnabled, calendarSettings ->
-                        viewModel.saveSettings(name, work, lunch, enabled, lead, updateCheckEnabled, calendarSettings) {
+                    onSave = { name, work, lunch, enabled, lead, updateCheckEnabled, calendarSettings, forgottenSettings ->
+                        viewModel.saveSettings(
+                            name, work, lunch, enabled, lead, updateCheckEnabled,
+                            calendarSettings, forgottenSettings
+                        ) {
                             messageScope.launch { snackbarHostState.showSnackbar("Настройки сохранены") }
                         }
                     },
@@ -709,7 +713,16 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
 @Composable
 private fun SettingsScreen(
     state: WorkUiState,
-    onSave: (String, Int, Int, Boolean, Int, Boolean, ProductionCalendarSettings) -> Unit,
+    onSave: (
+        String,
+        Int,
+        Int,
+        Boolean,
+        Int,
+        Boolean,
+        ProductionCalendarSettings,
+        ForgottenMarkReminderSettings
+    ) -> Unit,
     onOpenProject: () -> Unit,
     onCheckUpdates: () -> Unit,
     onExportBackup: () -> Unit,
@@ -718,12 +731,25 @@ private fun SettingsScreen(
     fileMessage: String?,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var name by remember(state.workplaceName) { mutableStateOf(state.workplaceName) }
     var workHours by remember(state.schedule.workMinutes) { mutableStateOf((state.schedule.workMinutes / 60).toString()) }
     var workMinutes by remember(state.schedule.workMinutes) { mutableStateOf((state.schedule.workMinutes % 60).toString()) }
     var lunchMinutes by remember(state.schedule.lunchMinutes) { mutableStateOf(state.schedule.lunchMinutes.toString()) }
     var reminderEnabled by remember(state.lunchReminderEnabled) { mutableStateOf(state.lunchReminderEnabled) }
     var reminderLead by remember(state.lunchReminderLeadMinutes) { mutableIntStateOf(state.lunchReminderLeadMinutes) }
+    var forgottenReminderEnabled by remember(state.forgottenMarkReminderSettings.enabled) {
+        mutableStateOf(state.forgottenMarkReminderSettings.enabled)
+    }
+    var forgottenEntryTime by remember(state.forgottenMarkReminderSettings.entryCheckTime) {
+        mutableStateOf(state.forgottenMarkReminderSettings.entryCheckTime)
+    }
+    var forgottenExitGrace by remember(state.forgottenMarkReminderSettings.exitGraceMinutes) {
+        mutableIntStateOf(state.forgottenMarkReminderSettings.exitGraceMinutes)
+    }
+    var forgottenSnooze by remember(state.forgottenMarkReminderSettings.snoozeMinutes) {
+        mutableIntStateOf(state.forgottenMarkReminderSettings.snoozeMinutes)
+    }
     var automaticUpdateCheckEnabled by remember(state.automaticUpdateCheckEnabled) {
         mutableStateOf(state.automaticUpdateCheckEnabled)
     }
@@ -857,6 +883,83 @@ private fun SettingsScreen(
             }
         }
         item {
+            Card(shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Забытые отметки", fontWeight = FontWeight.Bold)
+                            Text(
+                                "Напомнить о входе или выходе без геолокации",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = forgottenReminderEnabled,
+                            onCheckedChange = { forgottenReminderEnabled = it }
+                        )
+                    }
+                    if (forgottenReminderEnabled) {
+                        Text("Проверять отсутствие входа", fontWeight = FontWeight.SemiBold)
+                        OutlinedButton(
+                            onClick = {
+                                TimePickerDialog(
+                                    context,
+                                    { _, hour, minute -> forgottenEntryTime = LocalTime.of(hour, minute) },
+                                    forgottenEntryTime.hour,
+                                    forgottenEntryTime.minute,
+                                    true
+                                ).show()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Schedule, null)
+                            Text("  В %02d:%02d".format(forgottenEntryTime.hour, forgottenEntryTime.minute))
+                        }
+
+                        Text("Напомнить о выходе после расчётного конца смены")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(30, 60, 120).forEach { minutes ->
+                                val label = if (minutes < 60) "$minutes мин" else "${minutes / 60} ч"
+                                if (forgottenExitGrace == minutes) {
+                                    Button(
+                                        onClick = { forgottenExitGrace = minutes },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text(label) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { forgottenExitGrace = minutes },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text(label) }
+                                }
+                            }
+                        }
+
+                        Text("Кнопка «Напомнить позже»")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(15, 30, 60).forEach { minutes ->
+                                val label = if (minutes < 60) "$minutes мин" else "1 ч"
+                                if (forgottenSnooze == minutes) {
+                                    Button(
+                                        onClick = { forgottenSnooze = minutes },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text(label) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { forgottenSnooze = minutes },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text(label) }
+                                }
+                            }
+                        }
+                        Text(
+                            "Выходные, праздники, отпуск, больничный, командировка и запланированное отсутствие пропускаются.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+        item {
             OutlinedButton(onClick = { showInstructions = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Icon(Icons.Default.HelpOutline, null)
                 Text("  Инструкция")
@@ -913,6 +1016,12 @@ private fun SettingsScreen(
                         regionalEnabled = regionalCalendarEnabled,
                         region = calendarRegion,
                         shortenedDayMode = shortenedDayMode
+                    ),
+                    ForgottenMarkReminderSettings(
+                        enabled = forgottenReminderEnabled,
+                        entryCheckTime = forgottenEntryTime,
+                        exitGraceMinutes = forgottenExitGrace,
+                        snoozeMinutes = forgottenSnooze
                     )
                 )
             }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Сохранить настройки") }
@@ -997,20 +1106,24 @@ private fun InstructionsDialog(onDismiss: () -> Unit) {
                     "В календаре можно отметить день «Не буду, отработаю заранее». Его норма останется в месячном плане, но часы распределятся между доступными днями."
                 )
                 InstructionSection(
-                    "6. Резервная копия",
+                    "6. Забытые отметки",
+                    "В настройках можно включить проверку входа и выхода. Уведомление позволяет поставить отметку сейчас, отложить напоминание или отметить сегодняшний день как запланированное отсутствие. Геолокация не используется."
+                )
+                InstructionSection(
+                    "7. Резервная копия",
                     "Перед обновлением или переносом телефона сохраните JSON. CSV предназначен для сверки выбранного месяца с выгрузкой проходной."
                 )
                 InstructionSection(
-                    "7. Производственный календарь",
+                    "8. Производственный календарь",
                     "В настройках отдельно включаются праздники России, праздники региона и сокращённые дни. " +
                         "В режиме «Спрашивать» решение сохраняется для конкретной даты. Ручной тип дня в календаре всегда имеет приоритет."
                 )
                 InstructionSection(
-                    "8. Быстрый доступ",
+                    "9. Быстрый доступ",
                     "Добавьте виджет на домашний экран или плитку WorkBalance в шторку Android. Все кнопки используют одну базу данных."
                 )
                 InstructionSection(
-                    "9. Обновления",
+                    "10. Обновления",
                     "В разделе «О приложении» можно открыть GitHub и проверить новую версию. Автоматическая проверка выполняется при запуске не чаще одного раза в сутки и не отправляет рабочие отметки."
                 )
             }
