@@ -76,10 +76,14 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import ru.maxstrix.workbalance.BuildConfig
+import ru.maxstrix.workbalance.domain.CalendarRegion
 import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayResult
 import ru.maxstrix.workbalance.domain.EventType
+import ru.maxstrix.workbalance.domain.ForgottenMarkReminderSettings
 import ru.maxstrix.workbalance.domain.MonthResult
+import ru.maxstrix.workbalance.domain.ProductionCalendarSettings
+import ru.maxstrix.workbalance.domain.ShortenedDayMode
 import ru.maxstrix.workbalance.domain.WorkEvent
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -190,6 +194,9 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                     onToggle = viewModel::togglePresence,
                     onAdd = { addingEvent = true },
                     onEdit = { editedEvent = it },
+                    onShortenedDecision = { apply ->
+                        viewModel.setShortenedDayDecision(state.now.toLocalDate(), apply)
+                    },
                     modifier = Modifier.padding(padding)
                 )
                 AppPage.CALENDAR -> CalendarScreen(
@@ -200,13 +207,17 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                     onEditInterval = { date, interval ->
                         intervalEditor = IntervalEditorState(date, interval)
                     },
+                    onShortenedDecision = viewModel::setShortenedDayDecision,
                     modifier = Modifier.padding(padding)
                 )
                 AppPage.FORECAST -> ForecastScreen(state, Modifier.padding(padding))
                 AppPage.SETTINGS -> SettingsScreen(
                     state = state,
-                    onSave = { name, work, lunch, enabled, lead, updateCheckEnabled ->
-                        viewModel.saveSettings(name, work, lunch, enabled, lead, updateCheckEnabled) {
+                    onSave = { name, work, lunch, enabled, lead, updateCheckEnabled, calendarSettings, forgottenSettings ->
+                        viewModel.saveSettings(
+                            name, work, lunch, enabled, lead, updateCheckEnabled,
+                            calendarSettings, forgottenSettings
+                        ) {
                             messageScope.launch { snackbarHostState.showSnackbar("Настройки сохранены") }
                         }
                     },
@@ -318,9 +329,11 @@ private fun TodayScreen(
     onToggle: () -> Unit,
     onAdd: () -> Unit,
     onEdit: (WorkEvent) -> Unit,
+    onShortenedDecision: (Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val today = state.today ?: return
+    val calendarNote = today.calendarNote
     LazyColumn(
         modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -332,6 +345,19 @@ private fun TodayScreen(
                 today.date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale("ru")) + ", " + today.date.asDate(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+        if (today.shortenedDecisionNeeded) {
+            item { ShortenedDayDecisionCard(today, onShortenedDecision) }
+        } else if (!calendarNote.isNullOrBlank()) {
+            item {
+                val detail = when {
+                    today.requiredMinutes == 0L -> "Сегодня по производственному календарю выходной."
+                    today.shortenedApplied -> "Норма уменьшена на ${today.shortenedByMinutes.toLong().asDuration()}."
+                    today.shortenedByMinutes > 0 -> "Сокращение не учитывается в норме этого дня."
+                    else -> "Норма дня рассчитана с учётом выбранных настроек."
+                }
+                InfoCard(calendarNote, detail, MaterialTheme.colorScheme.secondaryContainer)
+            }
         }
         item { StatusCard(state) }
         item {
@@ -362,6 +388,31 @@ private fun TodayScreen(
         }
         if (today.warnings.isNotEmpty()) item {
             InfoCard("Проверьте отметки", today.warnings.joinToString("\n"), MaterialTheme.colorScheme.errorContainer)
+        }
+    }
+}
+
+@Composable
+private fun ShortenedDayDecisionCard(day: DayResult, onDecision: (Boolean) -> Unit) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        shape = RoundedCornerShape(22.dp)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(day.calendarNote ?: "Сокращённый день", fontWeight = FontWeight.Bold)
+            Text(
+                "Официально рабочий день сокращён на ${day.shortenedByMinutes.toLong().asDuration()}. " +
+                    "Уменьшить сегодняшнюю норму до ${(day.requiredMinutes - day.shortenedByMinutes).coerceAtLeast(0).asDuration()}?",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = { onDecision(false) }, modifier = Modifier.weight(1f)) {
+                    Text("Не учитывать")
+                }
+                Button(onClick = { onDecision(true) }, modifier = Modifier.weight(1f)) {
+                    Text("Учесть")
+                }
+            }
         }
     }
 }
@@ -452,6 +503,7 @@ private fun CalendarScreen(
     onSetDay: (LocalDate, DayKind) -> Unit,
     onAddInterval: (LocalDate) -> Unit,
     onEditInterval: (LocalDate, WorkIntervalUi) -> Unit,
+    onShortenedDecision: (LocalDate, Boolean) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val month = state.month ?: return
@@ -465,6 +517,18 @@ private fun CalendarScreen(
         }
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item { MonthSummary(month) }
+            if (state.productionCalendar.settings.federalEnabled &&
+                !state.productionCalendar.hasYear(state.selectedMonth.year)
+            ) {
+                item {
+                    InfoCard(
+                        "Нет официального календаря на ${state.selectedMonth.year} год",
+                        "Пока используется приблизительный график по дням недели и ваши ручные изменения. " +
+                            "Праздники и переносы этого года ещё не учтены.",
+                        MaterialTheme.colorScheme.errorContainer
+                    )
+                }
+            }
             items(month.days, key = { it.date.toEpochDay() }) { day ->
                 DayRow(day, state.data?.overrides?.get(day.date)?.kind) { selectedDay = day }
             }
@@ -484,6 +548,10 @@ private fun CalendarScreen(
             onEditInterval = { interval ->
                 selectedDay = null
                 onEditInterval(day.date, interval)
+            },
+            onShortenedDecision = { apply ->
+                selectedDay = null
+                onShortenedDecision(day.date, apply)
             },
             onChangeKind = {
                 selectedDay = null
@@ -512,6 +580,7 @@ private fun MonthSummary(month: MonthResult) {
 @Composable
 private fun DayRow(day: DayResult, kind: DayKind?, onClick: () -> Unit) {
     val isFree = day.requiredMinutes == 0L
+    val calendarNote = day.calendarNote
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
@@ -523,11 +592,25 @@ private fun DayRow(day: DayResult, kind: DayKind?, onClick: () -> Unit) {
                 Text(
                     when {
                         kind == DayKind.PLANNED_ABSENCE -> "Не буду — норму отработать заранее"
-                        isFree -> "Выходной / особый день"
+                        isFree -> calendarNote ?: "Выходной / особый день"
                         else -> "${day.creditedMinutes.asDuration()} из ${day.requiredMinutes.asDuration()}"
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (!isFree && !calendarNote.isNullOrBlank()) {
+                    Text(calendarNote, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                when {
+                    day.shortenedDecisionNeeded -> Text(
+                        "Нужно решить: учитывать сокращение",
+                        color = MaterialTheme.colorScheme.error,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    day.shortenedApplied -> Text(
+                        "Норма сокращена на ${day.shortenedByMinutes.toLong().asDuration()}",
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
             if (!isFree || day.creditedMinutes > 0) {
                 Text(day.balanceMinutes.asSignedDuration(), fontWeight = FontWeight.Bold, color = balanceColor(day.balanceMinutes))
@@ -546,6 +629,18 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
         item {
             Text("Прогноз", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(month.month.asMonthTitle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (state.productionCalendar.settings.federalEnabled &&
+            !state.productionCalendar.hasYear(month.month.year)
+        ) {
+            item {
+                InfoCard(
+                    "Предварительный план",
+                    "Официальный производственный календарь на ${month.month.year} год не установлен. " +
+                        "Прогноз пока рассчитан по обычной рабочей неделе.",
+                    MaterialTheme.colorScheme.errorContainer
+                )
+            }
         }
         item { InfoCard("Осталось закрыть", month.remainingMinutes.asDuration(), MaterialTheme.colorScheme.primaryContainer, large = true) }
         item {
@@ -618,7 +713,16 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
 @Composable
 private fun SettingsScreen(
     state: WorkUiState,
-    onSave: (String, Int, Int, Boolean, Int, Boolean) -> Unit,
+    onSave: (
+        String,
+        Int,
+        Int,
+        Boolean,
+        Int,
+        Boolean,
+        ProductionCalendarSettings,
+        ForgottenMarkReminderSettings
+    ) -> Unit,
     onOpenProject: () -> Unit,
     onCheckUpdates: () -> Unit,
     onExportBackup: () -> Unit,
@@ -627,14 +731,39 @@ private fun SettingsScreen(
     fileMessage: String?,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     var name by remember(state.workplaceName) { mutableStateOf(state.workplaceName) }
     var workHours by remember(state.schedule.workMinutes) { mutableStateOf((state.schedule.workMinutes / 60).toString()) }
     var workMinutes by remember(state.schedule.workMinutes) { mutableStateOf((state.schedule.workMinutes % 60).toString()) }
     var lunchMinutes by remember(state.schedule.lunchMinutes) { mutableStateOf(state.schedule.lunchMinutes.toString()) }
     var reminderEnabled by remember(state.lunchReminderEnabled) { mutableStateOf(state.lunchReminderEnabled) }
     var reminderLead by remember(state.lunchReminderLeadMinutes) { mutableIntStateOf(state.lunchReminderLeadMinutes) }
+    var forgottenReminderEnabled by remember(state.forgottenMarkReminderSettings.enabled) {
+        mutableStateOf(state.forgottenMarkReminderSettings.enabled)
+    }
+    var forgottenEntryTime by remember(state.forgottenMarkReminderSettings.entryCheckTime) {
+        mutableStateOf(state.forgottenMarkReminderSettings.entryCheckTime)
+    }
+    var forgottenExitGrace by remember(state.forgottenMarkReminderSettings.exitGraceMinutes) {
+        mutableIntStateOf(state.forgottenMarkReminderSettings.exitGraceMinutes)
+    }
+    var forgottenSnooze by remember(state.forgottenMarkReminderSettings.snoozeMinutes) {
+        mutableIntStateOf(state.forgottenMarkReminderSettings.snoozeMinutes)
+    }
     var automaticUpdateCheckEnabled by remember(state.automaticUpdateCheckEnabled) {
         mutableStateOf(state.automaticUpdateCheckEnabled)
+    }
+    var federalCalendarEnabled by remember(state.productionCalendar.settings.federalEnabled) {
+        mutableStateOf(state.productionCalendar.settings.federalEnabled)
+    }
+    var regionalCalendarEnabled by remember(state.productionCalendar.settings.regionalEnabled) {
+        mutableStateOf(state.productionCalendar.settings.regionalEnabled)
+    }
+    var calendarRegion by remember(state.productionCalendar.settings.region) {
+        mutableStateOf(state.productionCalendar.settings.region)
+    }
+    var shortenedDayMode by remember(state.productionCalendar.settings.shortenedDayMode) {
+        mutableStateOf(state.productionCalendar.settings.shortenedDayMode)
     }
     var showInstructions by remember { mutableStateOf(false) }
 
@@ -668,6 +797,71 @@ private fun SettingsScreen(
         }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Производственный календарь", fontWeight = FontWeight.Bold)
+                    Text(
+                        "Встроенные официальные данные: ${state.availableCalendarYears.sorted().joinToString().ifBlank { "нет" }}.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Праздники России", fontWeight = FontWeight.SemiBold)
+                            Text("Нерабочие дни и переносы", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(checked = federalCalendarEnabled, onCheckedChange = { federalCalendarEnabled = it })
+                    }
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Праздники региона", fontWeight = FontWeight.SemiBold)
+                            Text("Например, Радоница", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = regionalCalendarEnabled,
+                            onCheckedChange = { enabled ->
+                                regionalCalendarEnabled = enabled
+                                if (enabled && calendarRegion == CalendarRegion.NONE) {
+                                    calendarRegion = CalendarRegion.SARATOV
+                                }
+                            }
+                        )
+                    }
+                    if (regionalCalendarEnabled) {
+                        Text("Регион", fontWeight = FontWeight.SemiBold)
+                        CalendarRegion.entries.filter { it != CalendarRegion.NONE }.forEach { region ->
+                            if (calendarRegion == region) {
+                                Button(onClick = { calendarRegion = region }, modifier = Modifier.fillMaxWidth()) {
+                                    Text(region.title)
+                                }
+                            } else {
+                                OutlinedButton(onClick = { calendarRegion = region }, modifier = Modifier.fillMaxWidth()) {
+                                    Text(region.title)
+                                }
+                            }
+                        }
+                    }
+                    HorizontalDivider()
+                    Text("Сокращённые дни", fontWeight = FontWeight.SemiBold)
+                    ShortenedDayMode.entries.forEach { mode ->
+                        if (shortenedDayMode == mode) {
+                            Button(onClick = { shortenedDayMode = mode }, modifier = Modifier.fillMaxWidth()) {
+                                Text(mode.title)
+                            }
+                        } else {
+                            OutlinedButton(onClick = { shortenedDayMode = mode }, modifier = Modifier.fillMaxWidth()) {
+                                Text(mode.title)
+                            }
+                        }
+                    }
+                    Text(
+                        "Режим «Спрашивать» покажет вопрос в конкретный предпраздничный день. " +
+                            "Так можно учесть фактические правила работодателя.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+        item {
+            Card(shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -684,6 +878,83 @@ private fun SettingsScreen(
                             if (reminderLead == 15) Button(onClick = { reminderLead = 15 }, modifier = Modifier.weight(1f)) { Text("15 минут") }
                             else OutlinedButton(onClick = { reminderLead = 15 }, modifier = Modifier.weight(1f)) { Text("15 минут") }
                         }
+                    }
+                }
+            }
+        }
+        item {
+            Card(shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text("Забытые отметки", fontWeight = FontWeight.Bold)
+                            Text(
+                                "Напомнить о входе или выходе без геолокации",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = forgottenReminderEnabled,
+                            onCheckedChange = { forgottenReminderEnabled = it }
+                        )
+                    }
+                    if (forgottenReminderEnabled) {
+                        Text("Проверять отсутствие входа", fontWeight = FontWeight.SemiBold)
+                        OutlinedButton(
+                            onClick = {
+                                TimePickerDialog(
+                                    context,
+                                    { _, hour, minute -> forgottenEntryTime = LocalTime.of(hour, minute) },
+                                    forgottenEntryTime.hour,
+                                    forgottenEntryTime.minute,
+                                    true
+                                ).show()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Schedule, null)
+                            Text("  В %02d:%02d".format(forgottenEntryTime.hour, forgottenEntryTime.minute))
+                        }
+
+                        Text("Напомнить о выходе после расчётного конца смены")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(30, 60, 120).forEach { minutes ->
+                                val label = if (minutes < 60) "$minutes мин" else "${minutes / 60} ч"
+                                if (forgottenExitGrace == minutes) {
+                                    Button(
+                                        onClick = { forgottenExitGrace = minutes },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text(label) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { forgottenExitGrace = minutes },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text(label) }
+                                }
+                            }
+                        }
+
+                        Text("Кнопка «Напомнить позже»")
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(15, 30, 60).forEach { minutes ->
+                                val label = if (minutes < 60) "$minutes мин" else "1 ч"
+                                if (forgottenSnooze == minutes) {
+                                    Button(
+                                        onClick = { forgottenSnooze = minutes },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text(label) }
+                                } else {
+                                    OutlinedButton(
+                                        onClick = { forgottenSnooze = minutes },
+                                        modifier = Modifier.weight(1f)
+                                    ) { Text(label) }
+                                }
+                            }
+                        }
+                        Text(
+                            "Выходные, праздники, отпуск, больничный, командировка и запланированное отсутствие пропускаются.",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
@@ -739,7 +1010,19 @@ private fun SettingsScreen(
                     lunchMinutes.toIntOrNull() ?: 0,
                     reminderEnabled,
                     reminderLead,
-                    automaticUpdateCheckEnabled
+                    automaticUpdateCheckEnabled,
+                    ProductionCalendarSettings(
+                        federalEnabled = federalCalendarEnabled,
+                        regionalEnabled = regionalCalendarEnabled,
+                        region = calendarRegion,
+                        shortenedDayMode = shortenedDayMode
+                    ),
+                    ForgottenMarkReminderSettings(
+                        enabled = forgottenReminderEnabled,
+                        entryCheckTime = forgottenEntryTime,
+                        exitGraceMinutes = forgottenExitGrace,
+                        snoozeMinutes = forgottenSnooze
+                    )
                 )
             }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Сохранить настройки") }
         }
@@ -823,15 +1106,24 @@ private fun InstructionsDialog(onDismiss: () -> Unit) {
                     "В календаре можно отметить день «Не буду, отработаю заранее». Его норма останется в месячном плане, но часы распределятся между доступными днями."
                 )
                 InstructionSection(
-                    "6. Резервная копия",
+                    "6. Забытые отметки",
+                    "В настройках можно включить проверку входа и выхода. Уведомление позволяет поставить отметку сейчас, отложить напоминание или отметить сегодняшний день как запланированное отсутствие. Геолокация не используется."
+                )
+                InstructionSection(
+                    "7. Резервная копия",
                     "Перед обновлением или переносом телефона сохраните JSON. CSV предназначен для сверки выбранного месяца с выгрузкой проходной."
                 )
                 InstructionSection(
-                    "7. Быстрый доступ",
+                    "8. Производственный календарь",
+                    "В настройках отдельно включаются праздники России, праздники региона и сокращённые дни. " +
+                        "В режиме «Спрашивать» решение сохраняется для конкретной даты. Ручной тип дня в календаре всегда имеет приоритет."
+                )
+                InstructionSection(
+                    "9. Быстрый доступ",
                     "Добавьте виджет на домашний экран или плитку WorkBalance в шторку Android. Все кнопки используют одну базу данных."
                 )
                 InstructionSection(
-                    "8. Обновления",
+                    "10. Обновления",
                     "В разделе «О приложении» можно открыть GitHub и проверить новую версию. Автоматическая проверка выполняется при запуске не чаще одного раза в сутки и не отправляет рабочие отметки."
                 )
             }
@@ -863,9 +1155,11 @@ private fun DayDetailsDialog(
     onDismiss: () -> Unit,
     onAddInterval: () -> Unit,
     onEditInterval: (WorkIntervalUi) -> Unit,
+    onShortenedDecision: (Boolean) -> Unit,
     onChangeKind: () -> Unit
 ) {
     val intervals = remember(day.events) { pairIntervals(day.events) }
+    val calendarNote = day.calendarNote
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(day.date.asDate()) },
@@ -875,8 +1169,39 @@ private fun DayDetailsDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(kind.title, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                if (!calendarNote.isNullOrBlank()) {
+                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(calendarNote, fontWeight = FontWeight.Bold)
+                            when {
+                                day.shortenedDecisionNeeded -> {
+                                    Text(
+                                        "Официальное сокращение: ${day.shortenedByMinutes.toLong().asDuration()}. " +
+                                            "Учитывать его в норме этого дня?"
+                                    )
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(
+                                            onClick = { onShortenedDecision(false) },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Нет") }
+                                        Button(
+                                            onClick = { onShortenedDecision(true) },
+                                            modifier = Modifier.weight(1f)
+                                        ) { Text("Да") }
+                                    }
+                                }
+                                day.shortenedApplied -> Text(
+                                    "Норма сокращена на ${day.shortenedByMinutes.toLong().asDuration()}."
+                                )
+                                day.requiredMinutes == 0L -> Text("Нерабочий день по выбранному календарю.")
+                                day.shortenedByMinutes > 0 -> Text("Сокращение не учитывается в норме этого дня.")
+                            }
+                        }
+                    }
+                }
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.padding(14.dp)) {
+                        MetricRow("Норма дня", day.requiredMinutes.asDuration())
                         MetricRow("На территории", day.presenceMinutes.asDuration())
                         MetricRow("Вне территории", day.outsideMinutes.asDuration())
                         if (showLunchBreakdown) {

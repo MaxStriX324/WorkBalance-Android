@@ -4,11 +4,17 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayOverride
+import ru.maxstrix.workbalance.domain.CalendarRegion
 import ru.maxstrix.workbalance.domain.EventType
+import ru.maxstrix.workbalance.domain.ForgottenMarkReminderSettings
+import ru.maxstrix.workbalance.domain.ProductionCalendar
+import ru.maxstrix.workbalance.domain.ProductionCalendarSettings
 import ru.maxstrix.workbalance.domain.Schedule
+import ru.maxstrix.workbalance.domain.ShortenedDayMode
 import ru.maxstrix.workbalance.domain.WorkEvent
 import java.time.LocalDate
 import java.time.LocalDateTime
+import java.time.LocalTime
 
 data class WorkData(
     val events: List<WorkEvent>,
@@ -17,10 +23,16 @@ data class WorkData(
     val workplaceName: String,
     val lunchReminderEnabled: Boolean,
     val lunchReminderLeadMinutes: Int,
-    val automaticUpdateCheckEnabled: Boolean
+    val forgottenMarkReminderSettings: ForgottenMarkReminderSettings,
+    val automaticUpdateCheckEnabled: Boolean,
+    val productionCalendar: ProductionCalendar = ProductionCalendar(),
+    val availableCalendarYears: Set<Int> = emptySet()
 )
 
-class WorkRepository(private val dao: WorkDao) {
+class WorkRepository(
+    private val dao: WorkDao,
+    private val calendarProvider: ProductionCalendarProvider
+) {
     val data: Flow<WorkData> = combine(
         dao.observeEvents(), dao.observeOverrides(), dao.observeSettings()
     ) { eventRows, overrideRows, settingsRows ->
@@ -102,6 +114,28 @@ class WorkRepository(private val dao: WorkDao) {
         dao.putSetting(SettingEntity(KEY_AUTOMATIC_UPDATE_CHECK, enabled.toString()))
     }
 
+    suspend fun setForgottenMarkReminder(settings: ForgottenMarkReminderSettings) {
+        dao.putSettings(
+            listOf(
+                SettingEntity(KEY_FORGOTTEN_MARK_ENABLED, settings.enabled.toString()),
+                SettingEntity(KEY_FORGOTTEN_ENTRY_TIME, settings.entryCheckTime.toString()),
+                SettingEntity(KEY_FORGOTTEN_EXIT_GRACE, settings.exitGraceMinutes.coerceIn(0, 240).toString()),
+                SettingEntity(KEY_FORGOTTEN_SNOOZE, settings.snoozeMinutes.coerceIn(5, 240).toString())
+            )
+        )
+    }
+
+    suspend fun setProductionCalendarSettings(settings: ProductionCalendarSettings) {
+        dao.putSettings(
+            listOf(
+                SettingEntity(KEY_CALENDAR_FEDERAL_ENABLED, settings.federalEnabled.toString()),
+                SettingEntity(KEY_CALENDAR_REGIONAL_ENABLED, settings.regionalEnabled.toString()),
+                SettingEntity(KEY_CALENDAR_REGION, settings.region.code),
+                SettingEntity(KEY_CALENDAR_SHORTENED_MODE, settings.shortenedDayMode.name)
+            )
+        )
+    }
+
     suspend fun importBackup(json: String) {
         val payload = BackupCodec.parse(json)
         dao.replaceAll(payload.events, payload.overrides, payload.settings)
@@ -114,6 +148,14 @@ class WorkRepository(private val dao: WorkDao) {
         const val KEY_LUNCH_REMINDER_ENABLED = "lunch_reminder_enabled"
         const val KEY_LUNCH_REMINDER_LEAD = "lunch_reminder_lead"
         const val KEY_AUTOMATIC_UPDATE_CHECK = "automatic_update_check"
+        const val KEY_FORGOTTEN_MARK_ENABLED = "forgotten_mark_enabled"
+        const val KEY_FORGOTTEN_ENTRY_TIME = "forgotten_entry_time"
+        const val KEY_FORGOTTEN_EXIT_GRACE = "forgotten_exit_grace"
+        const val KEY_FORGOTTEN_SNOOZE = "forgotten_snooze"
+        const val KEY_CALENDAR_FEDERAL_ENABLED = "calendar_federal_enabled"
+        const val KEY_CALENDAR_REGIONAL_ENABLED = "calendar_regional_enabled"
+        const val KEY_CALENDAR_REGION = "calendar_region"
+        const val KEY_CALENDAR_SHORTENED_MODE = "calendar_shortened_mode"
     }
 
     private fun mapData(
@@ -122,6 +164,16 @@ class WorkRepository(private val dao: WorkDao) {
         settingsRows: List<SettingEntity>
     ): WorkData {
         val settings = settingsRows.associate { it.key to it.value }
+        val calendarSettings = ProductionCalendarSettings(
+            federalEnabled = settings[KEY_CALENDAR_FEDERAL_ENABLED]
+                ?.toBooleanStrictOrNull() ?: true,
+            regionalEnabled = settings[KEY_CALENDAR_REGIONAL_ENABLED]
+                ?.toBooleanStrictOrNull() ?: false,
+            region = CalendarRegion.fromCode(settings[KEY_CALENDAR_REGION] ?: CalendarRegion.SARATOV.code),
+            shortenedDayMode = settings[KEY_CALENDAR_SHORTENED_MODE]
+                ?.let { value -> runCatching { ShortenedDayMode.valueOf(value) }.getOrNull() }
+                ?: ShortenedDayMode.ASK
+        )
         return WorkData(
             events = eventRows.map { it.toDomain() },
             overrides = overrideRows.associate { row ->
@@ -134,8 +186,20 @@ class WorkRepository(private val dao: WorkDao) {
             workplaceName = settings[KEY_WORKPLACE_NAME] ?: "Работа",
             lunchReminderEnabled = settings[KEY_LUNCH_REMINDER_ENABLED]?.toBooleanStrictOrNull() ?: true,
             lunchReminderLeadMinutes = settings[KEY_LUNCH_REMINDER_LEAD]?.toIntOrNull() ?: 15,
+            forgottenMarkReminderSettings = ForgottenMarkReminderSettings(
+                enabled = settings[KEY_FORGOTTEN_MARK_ENABLED]?.toBooleanStrictOrNull() ?: false,
+                entryCheckTime = settings[KEY_FORGOTTEN_ENTRY_TIME]
+                    ?.let { value -> runCatching { LocalTime.parse(value) }.getOrNull() }
+                    ?: LocalTime.of(10, 0),
+                exitGraceMinutes = settings[KEY_FORGOTTEN_EXIT_GRACE]
+                    ?.toIntOrNull()?.coerceIn(0, 240) ?: 60,
+                snoozeMinutes = settings[KEY_FORGOTTEN_SNOOZE]
+                    ?.toIntOrNull()?.coerceIn(5, 240) ?: 30
+            ),
             automaticUpdateCheckEnabled = settings[KEY_AUTOMATIC_UPDATE_CHECK]
-                ?.toBooleanStrictOrNull() ?: true
+                ?.toBooleanStrictOrNull() ?: true,
+            productionCalendar = calendarProvider.calendar(calendarSettings),
+            availableCalendarYears = calendarProvider.availableYears()
         )
     }
 }

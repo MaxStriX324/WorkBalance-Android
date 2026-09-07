@@ -19,11 +19,15 @@ import ru.maxstrix.workbalance.data.WorkRepository
 import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayResult
 import ru.maxstrix.workbalance.domain.EventType
+import ru.maxstrix.workbalance.domain.ForgottenMarkReminderSettings
 import ru.maxstrix.workbalance.domain.MonthResult
+import ru.maxstrix.workbalance.domain.ProductionCalendar
+import ru.maxstrix.workbalance.domain.ProductionCalendarSettings
 import ru.maxstrix.workbalance.domain.Schedule
 import ru.maxstrix.workbalance.domain.WorkEvent
 import ru.maxstrix.workbalance.domain.WorkTimeCalculator
 import ru.maxstrix.workbalance.notification.LunchReminderScheduler
+import ru.maxstrix.workbalance.notification.ForgottenMarkReminderScheduler
 import ru.maxstrix.workbalance.quickaccess.PresenceController
 import ru.maxstrix.workbalance.quickaccess.QuickAccessUpdater
 import ru.maxstrix.workbalance.update.AppRelease
@@ -55,7 +59,10 @@ data class WorkUiState(
     val balanceIncludingTodayMinutes: Long = 0,
     val lunchReminderEnabled: Boolean = true,
     val lunchReminderLeadMinutes: Int = 15,
+    val forgottenMarkReminderSettings: ForgottenMarkReminderSettings = ForgottenMarkReminderSettings(),
     val automaticUpdateCheckEnabled: Boolean = true,
+    val productionCalendar: ProductionCalendar = ProductionCalendar(),
+    val availableCalendarYears: Set<Int> = emptySet(),
     val checkingForUpdates: Boolean = false,
     val availableRelease: AppRelease? = null,
     val updateMessage: String? = null,
@@ -77,13 +84,14 @@ class WorkViewModel(
     val state = combine(repository.data, now, selectedMonth, updateUiState) { data, clock, month, update ->
         val today = WorkTimeCalculator.calculateDay(
             clock.toLocalDate(), data.events, data.schedule,
-            data.overrides[clock.toLocalDate()], clock
+            data.overrides[clock.toLocalDate()], clock, data.productionCalendar
         )
         val monthResult = WorkTimeCalculator.calculateMonth(
-            month, data.events, data.schedule, data.overrides, clock
+            month, data.events, data.schedule, data.overrides, clock, data.productionCalendar
         )
         val currentMonth = WorkTimeCalculator.calculateMonth(
-            YearMonth.from(clock), data.events, data.schedule, data.overrides, clock
+            YearMonth.from(clock), data.events, data.schedule, data.overrides, clock,
+            data.productionCalendar
         )
         val previousBalance = currentMonth.days
             .filter { it.date.isBefore(clock.toLocalDate()) }
@@ -118,7 +126,10 @@ class WorkViewModel(
             balanceIncludingTodayMinutes = balanceIncludingToday,
             lunchReminderEnabled = data.lunchReminderEnabled,
             lunchReminderLeadMinutes = data.lunchReminderLeadMinutes,
+            forgottenMarkReminderSettings = data.forgottenMarkReminderSettings,
             automaticUpdateCheckEnabled = data.automaticUpdateCheckEnabled,
+            productionCalendar = data.productionCalendar,
+            availableCalendarYears = data.availableCalendarYears,
             checkingForUpdates = update.checking,
             availableRelease = update.availableRelease,
             updateMessage = update.message,
@@ -155,25 +166,25 @@ class WorkViewModel(
 
     fun addEvent(at: LocalDateTime, type: EventType) = viewModelScope.launch {
         repository.addEvent(at, type)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
         now.value = LocalDateTime.now()
     }
 
     fun updateEvent(event: WorkEvent) = viewModelScope.launch {
         repository.updateEvent(event)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
         now.value = LocalDateTime.now()
     }
 
     fun deleteEvent(event: WorkEvent) = viewModelScope.launch {
         repository.deleteEvent(event)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
         now.value = LocalDateTime.now()
     }
 
     fun addInterval(start: LocalDateTime, end: LocalDateTime) = viewModelScope.launch {
         repository.addInterval(start, end)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
         now.value = LocalDateTime.now()
     }
 
@@ -184,13 +195,13 @@ class WorkViewModel(
         end: LocalDateTime
     ) = viewModelScope.launch {
         repository.saveInterval(startEvent, endEvent, start, end)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
         now.value = LocalDateTime.now()
     }
 
     fun deleteInterval(startEvent: WorkEvent, endEvent: WorkEvent?) = viewModelScope.launch {
         repository.deleteInterval(startEvent, endEvent)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
         now.value = LocalDateTime.now()
     }
 
@@ -198,23 +209,23 @@ class WorkViewModel(
 
     fun setDay(date: LocalDate, kind: DayKind) = viewModelScope.launch {
         repository.setDay(date, kind)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
     }
 
     fun setSchedule(workMinutes: Int, lunchMinutes: Int) = viewModelScope.launch {
         repository.setSchedule(workMinutes.coerceAtLeast(1), lunchMinutes.coerceAtLeast(0))
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
     }
 
     fun setWorkplaceName(name: String) = viewModelScope.launch {
         repository.setWorkplaceName(name)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
     }
 
     fun setLunchReminder(enabled: Boolean, leadMinutes: Int) = viewModelScope.launch {
         repository.setLunchReminder(enabled, leadMinutes)
         if (!enabled) LunchReminderScheduler.cancel(appContext)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
     }
 
     fun saveSettings(
@@ -224,15 +235,32 @@ class WorkViewModel(
         reminderEnabled: Boolean,
         reminderLeadMinutes: Int,
         automaticUpdateCheckEnabled: Boolean,
+        productionCalendarSettings: ProductionCalendarSettings,
+        forgottenMarkReminderSettings: ForgottenMarkReminderSettings,
         onSaved: () -> Unit
     ) = viewModelScope.launch {
         repository.setWorkplaceName(name)
         repository.setSchedule(workMinutes.coerceAtLeast(1), lunchMinutes.coerceAtLeast(0))
         repository.setLunchReminder(reminderEnabled, reminderLeadMinutes)
         repository.setAutomaticUpdateCheck(automaticUpdateCheckEnabled)
+        repository.setProductionCalendarSettings(productionCalendarSettings)
+        repository.setForgottenMarkReminder(forgottenMarkReminderSettings)
         if (!reminderEnabled) LunchReminderScheduler.cancel(appContext)
-        QuickAccessUpdater.refresh(appContext)
+        refreshExternalSurfaces()
         onSaved()
+    }
+
+    fun setShortenedDayDecision(date: LocalDate, applyReduction: Boolean) = viewModelScope.launch {
+        val data = repository.snapshot()
+        val reduction = data.productionCalendar.dayInfo(date)?.shortenedByMinutes ?: return@launch
+        val workMinutes = if (applyReduction) {
+            max(0, data.schedule.workMinutes - reduction)
+        } else {
+            data.schedule.workMinutes
+        }
+        repository.setDay(date, DayKind.AUTO, workMinutes)
+        refreshExternalSurfaces()
+        now.value = LocalDateTime.now()
     }
 
     fun checkForUpdates(showCurrentVersionMessage: Boolean = true) {
@@ -280,7 +308,7 @@ class WorkViewModel(
     fun importBackup(json: String, onResult: (String) -> Unit) = viewModelScope.launch {
         runCatching { repository.importBackup(json) }
             .onSuccess {
-                QuickAccessUpdater.refresh(appContext)
+                refreshExternalSurfaces()
                 onResult("Резервная копия восстановлена")
             }
             .onFailure { error -> onResult("Не удалось восстановить: ${error.message ?: "неизвестная ошибка"}") }
@@ -299,6 +327,11 @@ class WorkViewModel(
 
     private fun updatePreferences() =
         appContext.getSharedPreferences(UPDATE_CHECK_PREFERENCES, Context.MODE_PRIVATE)
+
+    private fun refreshExternalSurfaces() {
+        QuickAccessUpdater.refresh(appContext)
+        ForgottenMarkReminderScheduler.refreshAsync(appContext)
+    }
 
     companion object {
         fun factory(repository: WorkRepository, appContext: Context): ViewModelProvider.Factory =

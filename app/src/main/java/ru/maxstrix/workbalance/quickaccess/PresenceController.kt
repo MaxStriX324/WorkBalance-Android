@@ -5,6 +5,7 @@ import ru.maxstrix.workbalance.WorkBalanceApplication
 import ru.maxstrix.workbalance.domain.EventType
 import ru.maxstrix.workbalance.domain.WorkTimeCalculator
 import ru.maxstrix.workbalance.notification.LunchReminderScheduler
+import ru.maxstrix.workbalance.notification.ForgottenMarkReminderScheduler
 import java.time.LocalDateTime
 import kotlin.math.max
 
@@ -20,10 +21,39 @@ class PresenceController(context: Context) {
             rawEvents = data.events,
             schedule = data.schedule,
             override = data.overrides[date],
-            now = now
+            now = now,
+            productionCalendar = data.productionCalendar
         )
         val leaving = today.isCurrentlyInside
         val type = if (leaving) EventType.OUT else EventType.IN
+        record(type, now, data, today)
+        return type
+    }
+
+    suspend fun mark(type: EventType, now: LocalDateTime = LocalDateTime.now()): Boolean {
+        val data = repository.snapshot()
+        val date = now.toLocalDate()
+        val today = WorkTimeCalculator.calculateDay(
+            date = date,
+            rawEvents = data.events,
+            schedule = data.schedule,
+            override = data.overrides[date],
+            now = now,
+            productionCalendar = data.productionCalendar
+        )
+        val expected = if (today.isCurrentlyInside) EventType.OUT else EventType.IN
+        if (type != expected) return false
+        record(type, now, data, today)
+        return true
+    }
+
+    private suspend fun record(
+        type: EventType,
+        now: LocalDateTime,
+        data: ru.maxstrix.workbalance.data.WorkData,
+        today: ru.maxstrix.workbalance.domain.DayResult
+    ) {
+        val leaving = type == EventType.OUT
         repository.addEvent(now, type)
 
         if (leaving && WorkTimeCalculator.shouldScheduleLunchReminder(
@@ -43,6 +73,6 @@ class PresenceController(context: Context) {
         }
 
         QuickAccessUpdater.refresh(appContext)
-        return type
+        ForgottenMarkReminderScheduler.refreshAsync(appContext)
     }
 }
