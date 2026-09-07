@@ -9,7 +9,6 @@ import ru.maxstrix.workbalance.domain.MonthResult
 import ru.maxstrix.workbalance.domain.ShortenedDayMode
 import java.time.LocalDate
 import java.time.LocalDateTime
-import java.time.LocalTime
 import java.time.format.TextStyle
 import java.util.Locale
 import kotlin.math.abs
@@ -34,10 +33,6 @@ object BackupCodec {
                 .put("lunchMinutes", data.schedule.lunchMinutes)
                 .put("lunchReminderEnabled", data.lunchReminderEnabled)
                 .put("lunchReminderLeadMinutes", data.lunchReminderLeadMinutes)
-                .put("forgottenMarkReminderEnabled", data.forgottenMarkReminderSettings.enabled)
-                .put("forgottenEntryCheckTime", data.forgottenMarkReminderSettings.entryCheckTime.toString())
-                .put("forgottenExitGraceMinutes", data.forgottenMarkReminderSettings.exitGraceMinutes)
-                .put("forgottenSnoozeMinutes", data.forgottenMarkReminderSettings.snoozeMinutes)
                 .put("automaticUpdateCheckEnabled", data.automaticUpdateCheckEnabled)
                 .put("calendarFederalEnabled", data.productionCalendar.settings.federalEnabled)
                 .put("calendarRegionalEnabled", data.productionCalendar.settings.regionalEnabled)
@@ -75,11 +70,6 @@ object BackupCodec {
         val workMinutes = settingsJson.getInt("workMinutes")
         val lunchMinutes = settingsJson.getInt("lunchMinutes")
         val leadMinutes = settingsJson.optInt("lunchReminderLeadMinutes", 15)
-        val forgottenEntryTime = runCatching {
-            LocalTime.parse(settingsJson.optString("forgottenEntryCheckTime", "10:00"))
-        }.getOrDefault(LocalTime.of(10, 0))
-        val forgottenExitGrace = settingsJson.optInt("forgottenExitGraceMinutes", 60)
-        val forgottenSnooze = settingsJson.optInt("forgottenSnoozeMinutes", 30)
         val calendarRegion = CalendarRegion.fromCode(
             settingsJson.optString("calendarRegion", CalendarRegion.SARATOV.code)
         )
@@ -89,21 +79,12 @@ object BackupCodec {
         require(workMinutes in 1..1440) { "Некорректная дневная норма" }
         require(lunchMinutes in 0..720) { "Некорректная длительность обеда" }
         require(leadMinutes in 1..59) { "Некорректное время напоминания" }
-        require(forgottenExitGrace in 0..240) { "Некорректная задержка напоминания о выходе" }
-        require(forgottenSnooze in 5..240) { "Некорректное время повторного напоминания" }
         val settings = listOf(
             SettingEntity(WorkRepository.KEY_WORK_MINUTES, workMinutes.toString()),
             SettingEntity(WorkRepository.KEY_LUNCH_MINUTES, lunchMinutes.toString()),
             SettingEntity(WorkRepository.KEY_WORKPLACE_NAME, settingsJson.optString("workplaceName", "Работа")),
             SettingEntity(WorkRepository.KEY_LUNCH_REMINDER_ENABLED, settingsJson.optBoolean("lunchReminderEnabled", true).toString()),
             SettingEntity(WorkRepository.KEY_LUNCH_REMINDER_LEAD, leadMinutes.toString()),
-            SettingEntity(
-                WorkRepository.KEY_FORGOTTEN_MARK_ENABLED,
-                settingsJson.optBoolean("forgottenMarkReminderEnabled", false).toString()
-            ),
-            SettingEntity(WorkRepository.KEY_FORGOTTEN_ENTRY_TIME, forgottenEntryTime.toString()),
-            SettingEntity(WorkRepository.KEY_FORGOTTEN_EXIT_GRACE, forgottenExitGrace.toString()),
-            SettingEntity(WorkRepository.KEY_FORGOTTEN_SNOOZE, forgottenSnooze.toString()),
             SettingEntity(
                 WorkRepository.KEY_AUTOMATIC_UPDATE_CHECK,
                 settingsJson.optBoolean("automaticUpdateCheckEnabled", true).toString()
