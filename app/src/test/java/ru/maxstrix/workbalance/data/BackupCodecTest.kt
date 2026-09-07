@@ -5,8 +5,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayOverride
+import ru.maxstrix.workbalance.domain.CalendarRegion
 import ru.maxstrix.workbalance.domain.EventType
+import ru.maxstrix.workbalance.domain.ProductionCalendar
+import ru.maxstrix.workbalance.domain.ProductionCalendarSettings
 import ru.maxstrix.workbalance.domain.Schedule
+import ru.maxstrix.workbalance.domain.ShortenedDayMode
 import ru.maxstrix.workbalance.domain.WorkEvent
 import ru.maxstrix.workbalance.domain.WorkTimeCalculator
 import java.time.LocalDate
@@ -27,7 +31,15 @@ class BackupCodecTest {
             workplaceName = "Работа",
             lunchReminderEnabled = true,
             lunchReminderLeadMinutes = 15,
-            automaticUpdateCheckEnabled = false
+            automaticUpdateCheckEnabled = false,
+            productionCalendar = ProductionCalendar(
+                ProductionCalendarSettings(
+                    federalEnabled = true,
+                    regionalEnabled = true,
+                    region = CalendarRegion.SARATOV,
+                    shortenedDayMode = ShortenedDayMode.AUTOMATIC
+                )
+            )
         )
 
         val parsed = BackupCodec.parse(BackupCodec.encode(data))
@@ -40,6 +52,15 @@ class BackupCodecTest {
         assertTrue(parsed.settings.any { it.key == WorkRepository.KEY_WORK_MINUTES && it.value == "480" })
         assertTrue(parsed.settings.any {
             it.key == WorkRepository.KEY_AUTOMATIC_UPDATE_CHECK && it.value == "false"
+        })
+        assertTrue(parsed.settings.any {
+            it.key == WorkRepository.KEY_CALENDAR_REGIONAL_ENABLED && it.value == "true"
+        })
+        assertTrue(parsed.settings.any {
+            it.key == WorkRepository.KEY_CALENDAR_REGION && it.value == CalendarRegion.SARATOV.code
+        })
+        assertTrue(parsed.settings.any {
+            it.key == WorkRepository.KEY_CALENDAR_SHORTENED_MODE && it.value == ShortenedDayMode.AUTOMATIC.name
         })
     }
 
@@ -61,5 +82,36 @@ class BackupCodecTest {
         assertTrue(csv.contains("\"2026-09-02\""))
         assertTrue(csv.contains("\"09:00 вход | 18:00 выход\""))
         assertTrue(csv.contains("\"8:00\""))
+    }
+
+    @Test
+    fun `old version one backup receives safe calendar defaults`() {
+        val oldBackup = """
+            {
+              "format": "ru.maxstrix.workbalance.backup",
+              "formatVersion": 1,
+              "settings": {
+                "workplaceName": "Работа",
+                "workMinutes": 480,
+                "lunchMinutes": 60,
+                "lunchReminderEnabled": true,
+                "lunchReminderLeadMinutes": 15
+              },
+              "events": [],
+              "dayOverrides": []
+            }
+        """.trimIndent()
+
+        val parsed = BackupCodec.parse(oldBackup)
+
+        assertTrue(parsed.settings.any {
+            it.key == WorkRepository.KEY_CALENDAR_FEDERAL_ENABLED && it.value == "true"
+        })
+        assertTrue(parsed.settings.any {
+            it.key == WorkRepository.KEY_CALENDAR_REGIONAL_ENABLED && it.value == "false"
+        })
+        assertTrue(parsed.settings.any {
+            it.key == WorkRepository.KEY_CALENDAR_SHORTENED_MODE && it.value == ShortenedDayMode.ASK.name
+        })
     }
 }

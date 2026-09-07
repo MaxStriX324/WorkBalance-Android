@@ -20,6 +20,8 @@ import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayResult
 import ru.maxstrix.workbalance.domain.EventType
 import ru.maxstrix.workbalance.domain.MonthResult
+import ru.maxstrix.workbalance.domain.ProductionCalendar
+import ru.maxstrix.workbalance.domain.ProductionCalendarSettings
 import ru.maxstrix.workbalance.domain.Schedule
 import ru.maxstrix.workbalance.domain.WorkEvent
 import ru.maxstrix.workbalance.domain.WorkTimeCalculator
@@ -56,6 +58,8 @@ data class WorkUiState(
     val lunchReminderEnabled: Boolean = true,
     val lunchReminderLeadMinutes: Int = 15,
     val automaticUpdateCheckEnabled: Boolean = true,
+    val productionCalendar: ProductionCalendar = ProductionCalendar(),
+    val availableCalendarYears: Set<Int> = emptySet(),
     val checkingForUpdates: Boolean = false,
     val availableRelease: AppRelease? = null,
     val updateMessage: String? = null,
@@ -77,13 +81,14 @@ class WorkViewModel(
     val state = combine(repository.data, now, selectedMonth, updateUiState) { data, clock, month, update ->
         val today = WorkTimeCalculator.calculateDay(
             clock.toLocalDate(), data.events, data.schedule,
-            data.overrides[clock.toLocalDate()], clock
+            data.overrides[clock.toLocalDate()], clock, data.productionCalendar
         )
         val monthResult = WorkTimeCalculator.calculateMonth(
-            month, data.events, data.schedule, data.overrides, clock
+            month, data.events, data.schedule, data.overrides, clock, data.productionCalendar
         )
         val currentMonth = WorkTimeCalculator.calculateMonth(
-            YearMonth.from(clock), data.events, data.schedule, data.overrides, clock
+            YearMonth.from(clock), data.events, data.schedule, data.overrides, clock,
+            data.productionCalendar
         )
         val previousBalance = currentMonth.days
             .filter { it.date.isBefore(clock.toLocalDate()) }
@@ -119,6 +124,8 @@ class WorkViewModel(
             lunchReminderEnabled = data.lunchReminderEnabled,
             lunchReminderLeadMinutes = data.lunchReminderLeadMinutes,
             automaticUpdateCheckEnabled = data.automaticUpdateCheckEnabled,
+            productionCalendar = data.productionCalendar,
+            availableCalendarYears = data.availableCalendarYears,
             checkingForUpdates = update.checking,
             availableRelease = update.availableRelease,
             updateMessage = update.message,
@@ -224,15 +231,30 @@ class WorkViewModel(
         reminderEnabled: Boolean,
         reminderLeadMinutes: Int,
         automaticUpdateCheckEnabled: Boolean,
+        productionCalendarSettings: ProductionCalendarSettings,
         onSaved: () -> Unit
     ) = viewModelScope.launch {
         repository.setWorkplaceName(name)
         repository.setSchedule(workMinutes.coerceAtLeast(1), lunchMinutes.coerceAtLeast(0))
         repository.setLunchReminder(reminderEnabled, reminderLeadMinutes)
         repository.setAutomaticUpdateCheck(automaticUpdateCheckEnabled)
+        repository.setProductionCalendarSettings(productionCalendarSettings)
         if (!reminderEnabled) LunchReminderScheduler.cancel(appContext)
         QuickAccessUpdater.refresh(appContext)
         onSaved()
+    }
+
+    fun setShortenedDayDecision(date: LocalDate, applyReduction: Boolean) = viewModelScope.launch {
+        val data = repository.snapshot()
+        val reduction = data.productionCalendar.dayInfo(date)?.shortenedByMinutes ?: return@launch
+        val workMinutes = if (applyReduction) {
+            max(0, data.schedule.workMinutes - reduction)
+        } else {
+            data.schedule.workMinutes
+        }
+        repository.setDay(date, DayKind.AUTO, workMinutes)
+        QuickAccessUpdater.refresh(appContext)
+        now.value = LocalDateTime.now()
     }
 
     fun checkForUpdates(showCurrentVersionMessage: Boolean = true) {

@@ -54,7 +54,11 @@ data class DayResult(
     val requiredMinutes: Long,
     val balanceMinutes: Long,
     val isCurrentlyInside: Boolean,
-    val warnings: List<String>
+    val warnings: List<String>,
+    val calendarNote: String? = null,
+    val shortenedByMinutes: Int = 0,
+    val shortenedApplied: Boolean = false,
+    val shortenedDecisionNeeded: Boolean = false
 )
 
 data class MonthResult(

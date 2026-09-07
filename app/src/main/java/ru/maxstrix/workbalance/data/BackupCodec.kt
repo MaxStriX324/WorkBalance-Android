@@ -3,8 +3,10 @@ package ru.maxstrix.workbalance.data
 import org.json.JSONArray
 import org.json.JSONObject
 import ru.maxstrix.workbalance.domain.DayKind
+import ru.maxstrix.workbalance.domain.CalendarRegion
 import ru.maxstrix.workbalance.domain.EventType
 import ru.maxstrix.workbalance.domain.MonthResult
+import ru.maxstrix.workbalance.domain.ShortenedDayMode
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.TextStyle
@@ -32,6 +34,10 @@ object BackupCodec {
                 .put("lunchReminderEnabled", data.lunchReminderEnabled)
                 .put("lunchReminderLeadMinutes", data.lunchReminderLeadMinutes)
                 .put("automaticUpdateCheckEnabled", data.automaticUpdateCheckEnabled)
+                .put("calendarFederalEnabled", data.productionCalendar.settings.federalEnabled)
+                .put("calendarRegionalEnabled", data.productionCalendar.settings.regionalEnabled)
+                .put("calendarRegion", data.productionCalendar.settings.region.code)
+                .put("calendarShortenedMode", data.productionCalendar.settings.shortenedDayMode.name)
             )
 
         val events = JSONArray()
@@ -64,6 +70,12 @@ object BackupCodec {
         val workMinutes = settingsJson.getInt("workMinutes")
         val lunchMinutes = settingsJson.getInt("lunchMinutes")
         val leadMinutes = settingsJson.optInt("lunchReminderLeadMinutes", 15)
+        val calendarRegion = CalendarRegion.fromCode(
+            settingsJson.optString("calendarRegion", CalendarRegion.SARATOV.code)
+        )
+        val shortenedMode = runCatching {
+            ShortenedDayMode.valueOf(settingsJson.optString("calendarShortenedMode", ShortenedDayMode.ASK.name))
+        }.getOrDefault(ShortenedDayMode.ASK)
         require(workMinutes in 1..1440) { "Некорректная дневная норма" }
         require(lunchMinutes in 0..720) { "Некорректная длительность обеда" }
         require(leadMinutes in 1..59) { "Некорректное время напоминания" }
@@ -76,7 +88,17 @@ object BackupCodec {
             SettingEntity(
                 WorkRepository.KEY_AUTOMATIC_UPDATE_CHECK,
                 settingsJson.optBoolean("automaticUpdateCheckEnabled", true).toString()
-            )
+            ),
+            SettingEntity(
+                WorkRepository.KEY_CALENDAR_FEDERAL_ENABLED,
+                settingsJson.optBoolean("calendarFederalEnabled", true).toString()
+            ),
+            SettingEntity(
+                WorkRepository.KEY_CALENDAR_REGIONAL_ENABLED,
+                settingsJson.optBoolean("calendarRegionalEnabled", false).toString()
+            ),
+            SettingEntity(WorkRepository.KEY_CALENDAR_REGION, calendarRegion.code),
+            SettingEntity(WorkRepository.KEY_CALENDAR_SHORTENED_MODE, shortenedMode.name)
         )
 
         val eventsJson = root.getJSONArray("events")
@@ -109,7 +131,7 @@ object BackupCodec {
             "Дата", "День недели", "Норма", "Первый вход", "Последний выход",
             "Отметки", "На территории", "Вне территории всего", "Обед вне территории",
             "Обед на территории", "Дополнительное отсутствие",
-            "Зачтено", "Баланс", "Предупреждения"
+            "Зачтено", "Баланс", "Производственный календарь", "Предупреждения"
         )
         val rows = month.days.map { day ->
             listOf(
@@ -126,6 +148,7 @@ object BackupCodec {
                 duration(day.extraOutsideMinutes),
                 duration(day.creditedMinutes),
                 signedDuration(day.balanceMinutes),
+                day.calendarNote.orEmpty(),
                 day.warnings.joinToString(" | ")
             )
         }
