@@ -8,6 +8,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import ru.maxstrix.workbalance.AppLocale
+import ru.maxstrix.workbalance.R
 import ru.maxstrix.workbalance.WorkBalanceApplication
 import ru.maxstrix.workbalance.domain.WorkTimeCalculator
 import ru.maxstrix.workbalance.quickaccess.PresenceController
@@ -47,11 +49,16 @@ class WorkBalanceTileService : TileService() {
                 date, data.events, data.schedule, data.overrides[date], now,
                 data.productionCalendar
             )
-            tile.label = "WorkBalance"
+            val localizedContext = AppLocale.wrap(applicationContext)
+            tile.label = localizedContext.getString(R.string.app_name_short)
             tile.state = if (today.isCurrentlyInside) Tile.STATE_ACTIVE else Tile.STATE_INACTIVE
-            tile.contentDescription = if (today.isCurrentlyInside) "На работе. Нажмите, чтобы выйти" else "Не на работе. Нажмите, чтобы войти"
+            tile.contentDescription = localizedContext.getString(
+                if (today.isCurrentlyInside) R.string.tile_at_work_description else R.string.tile_away_description
+            )
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                tile.subtitle = if (today.isCurrentlyInside) "На работе · нажать для выхода" else "Не на работе · нажать для входа"
+                tile.subtitle = localizedContext.getString(
+                    if (today.isCurrentlyInside) R.string.tile_at_work_subtitle else R.string.tile_away_subtitle
+                )
             }
             tile.updateTile()
         }

@@ -14,6 +14,7 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
+import ru.maxstrix.workbalance.AppLocale
 import ru.maxstrix.workbalance.MainActivity
 import ru.maxstrix.workbalance.R
 
@@ -55,11 +56,16 @@ class LunchReminderReceiver : BroadcastReceiver() {
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) return
 
+        val localizedContext = AppLocale.wrap(context)
         val manager = context.getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             manager.createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Напоминание об обеде", NotificationManager.IMPORTANCE_HIGH).apply {
-                    description = "Предупреждает перед окончанием обеда"
+                NotificationChannel(
+                    CHANNEL_ID,
+                    localizedContext.getString(R.string.lunch_channel_name),
+                    NotificationManager.IMPORTANCE_HIGH
+                ).apply {
+                    description = localizedContext.getString(R.string.lunch_channel_description)
                 }
             )
         }
@@ -73,8 +79,8 @@ class LunchReminderReceiver : BroadcastReceiver() {
         )
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Обед заканчивается")
-            .setContentText("До окончания обеда осталось $lead мин.")
+            .setContentTitle(localizedContext.getString(R.string.lunch_notification_title))
+            .setContentText(localizedContext.getString(R.string.lunch_notification_text, lead))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .setContentIntent(openApp)

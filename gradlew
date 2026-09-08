@@ -2,7 +2,7 @@
 set -eu
 
 APP_HOME=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-GRADLE_VERSION=8.9
+GRADLE_VERSION=8.11.1
 BOOTSTRAP_DIR="$APP_HOME/.gradle-bootstrap"
 GRADLE_HOME="$BOOTSTRAP_DIR/gradle-$GRADLE_VERSION"
 ARCHIVE="$BOOTSTRAP_DIR/gradle-$GRADLE_VERSION-bin.zip"

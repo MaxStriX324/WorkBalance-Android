@@ -105,6 +105,24 @@ class BackupCodecTest {
     }
 
     @Test
+    fun `month csv follows selected English language`() {
+        val date = LocalDate.of(2026, 9, 2)
+        val events = listOf(
+            WorkEvent(1, date.atTime(9, 0), EventType.IN),
+            WorkEvent(2, date.atTime(18, 0), EventType.OUT)
+        )
+        val month = WorkTimeCalculator.calculateMonth(
+            YearMonth.of(2026, 9), events, Schedule(480, 60), emptyMap(),
+            LocalDateTime.of(2026, 9, 2, 19, 0)
+        )
+
+        val csv = BackupCodec.monthCsv(month, "en")
+
+        assertTrue(csv.contains("\"Date\";\"Weekday\";\"Target\""))
+        assertTrue(csv.contains("\"09:00 check-in | 18:00 check-out\""))
+    }
+
+    @Test
     fun `old version one backup receives safe calendar defaults`() {
         val oldBackup = """
             {

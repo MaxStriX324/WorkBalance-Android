@@ -20,6 +20,20 @@ data class BackupPayload(
     val settings: List<SettingEntity>
 )
 
+enum class BackupValidationError {
+    INVALID_FORMAT,
+    UNSUPPORTED_VERSION,
+    INVALID_WORK_TARGET,
+    INVALID_BREAK_DURATION,
+    INVALID_BREAK_REMINDER,
+    INVALID_EXIT_REMINDER,
+    INVALID_SNOOZE,
+    INVALID_SPECIAL_DAY_TARGET
+}
+
+class BackupValidationException(val reason: BackupValidationError) :
+    IllegalArgumentException(reason.name)
+
 object BackupCodec {
     private const val FORMAT = "ru.maxstrix.workbalance.backup"
     private const val FORMAT_VERSION = 1
@@ -66,10 +80,13 @@ object BackupCodec {
         return root.toString(2)
     }
 
-    fun parse(json: String): BackupPayload {
+    fun parse(json: String, defaultWorkplaceName: String = "Работа"): BackupPayload {
         val root = JSONObject(json)
-        require(root.optString("format") == FORMAT) { "Это не резервная копия WorkBalance" }
-        require(root.optInt("formatVersion", -1) == FORMAT_VERSION) { "Неподдерживаемая версия резервной копии" }
+        validate(root.optString("format") == FORMAT, BackupValidationError.INVALID_FORMAT)
+        validate(
+            root.optInt("formatVersion", -1) == FORMAT_VERSION,
+            BackupValidationError.UNSUPPORTED_VERSION
+        )
 
         val settingsJson = root.getJSONObject("settings")
         val workMinutes = settingsJson.getInt("workMinutes")
@@ -86,15 +103,18 @@ object BackupCodec {
         val shortenedMode = runCatching {
             ShortenedDayMode.valueOf(settingsJson.optString("calendarShortenedMode", ShortenedDayMode.ASK.name))
         }.getOrDefault(ShortenedDayMode.ASK)
-        require(workMinutes in 1..1440) { "Некорректная дневная норма" }
-        require(lunchMinutes in 0..720) { "Некорректная длительность обеда" }
-        require(leadMinutes in 1..59) { "Некорректное время напоминания" }
-        require(forgottenExitGrace in 0..240) { "Некорректная задержка напоминания о выходе" }
-        require(forgottenSnooze in 5..240) { "Некорректное время повторного напоминания" }
+        validate(workMinutes in 1..1440, BackupValidationError.INVALID_WORK_TARGET)
+        validate(lunchMinutes in 0..720, BackupValidationError.INVALID_BREAK_DURATION)
+        validate(leadMinutes in 1..59, BackupValidationError.INVALID_BREAK_REMINDER)
+        validate(forgottenExitGrace in 0..240, BackupValidationError.INVALID_EXIT_REMINDER)
+        validate(forgottenSnooze in 5..240, BackupValidationError.INVALID_SNOOZE)
         val settings = listOf(
             SettingEntity(WorkRepository.KEY_WORK_MINUTES, workMinutes.toString()),
             SettingEntity(WorkRepository.KEY_LUNCH_MINUTES, lunchMinutes.toString()),
-            SettingEntity(WorkRepository.KEY_WORKPLACE_NAME, settingsJson.optString("workplaceName", "Работа")),
+            SettingEntity(
+                WorkRepository.KEY_WORKPLACE_NAME,
+                settingsJson.optString("workplaceName", defaultWorkplaceName)
+            ),
             SettingEntity(WorkRepository.KEY_LUNCH_REMINDER_ENABLED, settingsJson.optBoolean("lunchReminderEnabled", true).toString()),
             SettingEntity(WorkRepository.KEY_LUNCH_REMINDER_LEAD, leadMinutes.toString()),
             SettingEntity(
@@ -137,21 +157,33 @@ object BackupCodec {
                 val date = LocalDate.parse(item.getString("date"))
                 val kind = DayKind.valueOf(item.getString("kind"))
                 val custom = if (item.has("customWorkMinutes")) item.getInt("customWorkMinutes") else null
-                if (custom != null) require(custom in 0..1440) { "Некорректная норма особого дня" }
+                if (custom != null) {
+                    validate(custom in 0..1440, BackupValidationError.INVALID_SPECIAL_DAY_TARGET)
+                }
                 add(DayOverrideEntity(date.toEpochDay(), kind.name, custom))
             }
         }
         return BackupPayload(events, overrides, settings)
     }
 
-    fun monthCsv(month: MonthResult): String {
-        val locale = Locale("ru")
-        val header = listOf(
-            "Дата", "День недели", "Норма", "Первый вход", "Последний выход",
-            "Отметки", "На территории", "Вне территории всего", "Обед вне территории",
-            "Обед на территории", "Дополнительное отсутствие",
-            "Зачтено", "Баланс", "Производственный календарь", "Предупреждения"
-        )
+    fun monthCsv(month: MonthResult, languageTag: String = "ru"): String {
+        val locale = if (languageTag.isBlank()) Locale.getDefault() else Locale.forLanguageTag(languageTag)
+        val isRussian = locale.language.equals("ru", ignoreCase = true)
+        val header = if (isRussian) {
+            listOf(
+                "Дата", "День недели", "Норма", "Первый вход", "Последний выход",
+                "Отметки", "На территории", "Вне территории всего", "Обед вне территории",
+                "Обед на территории", "Дополнительное отсутствие",
+                "Зачтено", "Баланс", "Производственный календарь", "Предупреждения"
+            )
+        } else {
+            listOf(
+                "Date", "Weekday", "Target", "First check-in", "Last check-out",
+                "Records", "On-site time", "Off-site total", "Official break off-site",
+                "Official break on-site", "Additional absence",
+                "Credited", "Balance", "Production calendar", "Warnings"
+            )
+        }
         val rows = month.days.map { day ->
             listOf(
                 day.date.toString(),
@@ -159,7 +191,15 @@ object BackupCodec {
                 duration(day.requiredMinutes),
                 day.firstIn?.toLocalTime()?.toString()?.take(5).orEmpty(),
                 day.lastOut?.toLocalTime()?.toString()?.take(5).orEmpty(),
-                day.events.joinToString(" | ") { "${it.at.toLocalTime().toString().take(5)} ${if (it.type == EventType.IN) "вход" else "выход"}" },
+                day.events.joinToString(" | ") {
+                    val type = when {
+                        isRussian && it.type == EventType.IN -> "вход"
+                        isRussian -> "выход"
+                        it.type == EventType.IN -> "check-in"
+                        else -> "check-out"
+                    }
+                    "${it.at.toLocalTime().toString().take(5)} $type"
+                },
                 duration(day.presenceMinutes),
                 duration(day.outsideMinutes),
                 duration(day.lunchOutsideMinutes),
@@ -167,8 +207,8 @@ object BackupCodec {
                 duration(day.extraOutsideMinutes),
                 duration(day.creditedMinutes),
                 signedDuration(day.balanceMinutes),
-                day.calendarNote.orEmpty(),
-                day.warnings.joinToString(" | ")
+                localizeCalendarNote(day.calendarNote.orEmpty(), isRussian),
+                day.warnings.joinToString(" | ") { localizeWarning(it, isRussian) }
             )
         }
         return buildString {
@@ -183,6 +223,45 @@ object BackupCodec {
     private fun signedDuration(minutes: Long): String {
         val sign = when { minutes > 0 -> "+"; minutes < 0 -> "-"; else -> "" }
         return sign + duration(abs(minutes))
+    }
+
+    private fun localizeWarning(warning: String, isRussian: Boolean): String {
+        if (isRussian) return warning
+        return when {
+            warning.startsWith("Два входа подряд: ") ->
+                "Two consecutive check-ins: ${warning.substringAfter(": ")}"
+            warning.startsWith("Выход без входа: ") ->
+                "Check-out without check-in: ${warning.substringAfter(": ")}"
+            warning == "Нарушен порядок отметок" -> "The record order is invalid"
+            else -> warning
+        }
+    }
+
+    private fun localizeCalendarNote(note: String, isRussian: Boolean): String {
+        if (isRussian || note.isBlank()) return note
+        val translations = mapOf(
+            "Новогодние каникулы" to "New Year holidays",
+            "Рождество Христово" to "Orthodox Christmas Day",
+            "День защитника Отечества" to "Defender of the Fatherland Day",
+            "Международный женский день" to "International Women's Day",
+            "Праздник Весны и Труда" to "Spring and Labour Day",
+            "День Победы" to "Victory Day",
+            "День России" to "Russia Day",
+            "День народного единства" to "National Unity Day",
+            "Предпраздничный день" to "Pre-holiday workday",
+            "Радоница" to "Radonitsa",
+            "День перед Радоницей" to "Day before Radonitsa",
+            "Перенос выходного с 3 января" to "Day off transferred from January 3",
+            "Перенос выходного с 4 января" to "Day off transferred from January 4",
+            "Перенос выходного на Международный женский день" to
+                "Transferred day off for International Women's Day",
+            "Перенос выходного на День Победы" to "Transferred day off for Victory Day"
+        )
+        return note.split(" · ").joinToString(" · ") { translations[it] ?: it }
+    }
+
+    private fun validate(condition: Boolean, reason: BackupValidationError) {
+        if (!condition) throw BackupValidationException(reason)
     }
 
     private fun csvCell(value: String): String = "\"${value.replace("\"", "\"\"")}\""

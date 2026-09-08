@@ -1,34 +1,56 @@
-# Конфиденциальность
+# WorkBalance Privacy Policy
 
-WorkBalance работает локально и не требует регистрации.
+Last updated: September 8, 2026
 
-## Какие данные хранятся
+[Русская версия](PRIVACY_RU.md)
 
-- время входов и выходов;
-- настройки графика и обеда;
-- типы особых дней;
-- выбранное название рабочего места;
-- настройки уведомления об обеде;
-- настройка автоматической проверки обновлений;
-- выбранные параметры федерального и регионального производственного календаря.
-- настройки локальных напоминаний о забытых отметках.
+WorkBalance is an offline-first work-time planning application. It does not require registration.
 
-Данные находятся в локальной базе приложения на Android-устройстве.
+## Data stored on the device
 
-## Передача данных
+The app stores the following data in its local Android database and preferences:
 
-Приложение не содержит аналитики, рекламы, регистрации или собственного удалённого сервера. Рабочие отметки, название рабочего места и настройки не отправляются автору или третьим лицам.
+- check-in and check-out times;
+- daily target and required-break settings;
+- manual day types and planned unavailable days;
+- the workplace name entered by the user;
+- production-calendar options;
+- local reminder settings;
+- the selected application language;
+- the update-check preference in the GitHub distribution.
 
-Разрешение на интернет используется только для запроса публичного списка релизов репозитория `MaxStriX324/WorkBalance-Android` через GitHub API. Запрос содержит стандартные сетевые сведения, доступные GitHub, и номер установленной версии в строке `User-Agent`, но не содержит рабочие данные пользователя. Автоматическую проверку можно отключить в настройках; ручная кнопка проверки остаётся доступной.
+## Data transmission
 
-Производственные календари, начиная с версии 0.6.0, встроены в приложение и не загружаются через интернет.
+WorkBalance contains no analytics, advertising SDK, account system, or proprietary remote server. Work records, workplace names, calendar choices, and reminder settings are not sent to the developer.
 
-Пользователь самостоятельно выбирает место сохранения JSON и CSV через системное окно Android. После сохранения дальнейшая защита и передача этих файлов зависят от выбранного пользователем приложения или хранилища.
+The `github` distribution can request the public release list for `MaxStriX324/WorkBalance-Android` from the GitHub API. That request contains normal network metadata visible to GitHub and the installed version in the user-agent string, but no work records. Automatic checks can be disabled.
 
-## Разрешения Android
+The `play` and `rustore` distributions omit the built-in update checker and do not request Android's internet permission.
 
-Приложение использует разрешение на интернет для проверки обновлений и запрашивает разрешение на уведомления, чтобы предупредить перед окончанием обеда или о забытой отметке. Разрешение на запуск после перезагрузки нужно только для восстановления расписания локальных уведомлений. Доступ к геопозиции, контактам, камере и микрофону не используется.
+Production-calendar packs are bundled in the application and are not downloaded from a server.
 
-## Публикация примеров
+## Export and backup
 
-Перед созданием issue или отправкой отчёта удалите ФИО, название организации, номера пропусков и другие служебные сведения. JSON-резервная копия не содержит идентификаторов телефона или аккаунта, но содержит введённое пользователем название рабочего места и точное время проходов.
+The user may explicitly export a JSON backup or a monthly CSV report through Android's system file picker. The user selects the destination and is responsible for the exported file after it has been handed to the selected storage provider or application.
+
+A JSON backup contains the entered workplace name and exact work records. It does not contain an Android account, hardware identifier, advertising identifier, badge number, or automatically collected identity information.
+
+## Android permissions
+
+- Notifications are used for optional break and forgotten-record reminders.
+- Receive boot completed is used only to restore the schedule of local reminders after a restart.
+- Internet is present only in the GitHub distribution for public release checks.
+
+The app does not request access to location, contacts, camera, microphone, call history, or SMS.
+
+## Data deletion
+
+Users can delete individual records in the app. Uninstalling WorkBalance or clearing its application data removes its local database and preferences from the device. Previously exported files must be deleted separately from their chosen storage location.
+
+## Sharing diagnostic examples
+
+Before opening an issue, remove employee names, employer names, badge identifiers, real backups, and internal documents. Do not publish a signing key or its passwords.
+
+## Contact
+
+Privacy or security questions may be submitted through the project owner profile: [MaxStriX324](https://github.com/MaxStriX324).

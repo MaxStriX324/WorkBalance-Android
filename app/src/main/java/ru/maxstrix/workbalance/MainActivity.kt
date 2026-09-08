@@ -1,6 +1,7 @@
 package ru.maxstrix.workbalance
 
 import android.Manifest
+import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -34,5 +35,9 @@ class MainActivity : ComponentActivity() {
                 WorkBalanceApp(model)
             }
         }
+    }
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppLocale.wrap(newBase))
     }
 }

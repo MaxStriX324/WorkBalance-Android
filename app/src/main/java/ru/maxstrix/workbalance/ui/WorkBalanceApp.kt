@@ -2,6 +2,7 @@ package ru.maxstrix.workbalance.ui
 
 import android.app.DatePickerDialog
 import android.app.TimePickerDialog
+import androidx.annotation.StringRes
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
@@ -70,12 +71,16 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.launch
 import ru.maxstrix.workbalance.BuildConfig
+import ru.maxstrix.workbalance.AppLanguage
+import ru.maxstrix.workbalance.AppLocale
+import ru.maxstrix.workbalance.R
 import ru.maxstrix.workbalance.domain.CalendarRegion
 import ru.maxstrix.workbalance.domain.DayKind
 import ru.maxstrix.workbalance.domain.DayResult
@@ -90,12 +95,14 @@ import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.YearMonth
 import java.time.format.TextStyle
-import java.util.Locale
 
 private const val PROJECT_URL = "https://github.com/MaxStriX324/WorkBalance-Android"
 
-private enum class AppPage(val label: String) {
-    TODAY("Сегодня"), CALENDAR("Календарь"), FORECAST("Прогноз"), SETTINGS("Настройки")
+private enum class AppPage(@StringRes val labelRes: Int) {
+    TODAY(R.string.nav_today),
+    CALENDAR(R.string.nav_calendar),
+    FORECAST(R.string.nav_forecast),
+    SETTINGS(R.string.nav_settings)
 }
 
 private data class WorkIntervalUi(
@@ -135,9 +142,9 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
         if (uri != null) runCatching {
             context.contentResolver.openOutputStream(uri)?.writer(Charsets.UTF_8)?.use {
                 it.write(viewModel.backupJson())
-            } ?: error("Не удалось открыть файл")
-        }.onSuccess { fileMessage = "Резервная копия сохранена" }
-            .onFailure { fileMessage = "Ошибка экспорта: ${it.message}" }
+            } ?: error(context.getString(R.string.error_open_file))
+        }.onSuccess { fileMessage = context.getString(R.string.backup_saved) }
+            .onFailure { fileMessage = context.getString(R.string.export_failed, it.message.orEmpty()) }
     }
     val exportCsv = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("text/csv")
@@ -145,18 +152,18 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
         if (uri != null) runCatching {
             context.contentResolver.openOutputStream(uri)?.writer(Charsets.UTF_8)?.use {
                 it.write(viewModel.monthCsv())
-            } ?: error("Не удалось открыть файл")
-        }.onSuccess { fileMessage = "Отчёт месяца сохранён" }
-            .onFailure { fileMessage = "Ошибка экспорта: ${it.message}" }
+            } ?: error(context.getString(R.string.error_open_file))
+        }.onSuccess { fileMessage = context.getString(R.string.month_report_saved) }
+            .onFailure { fileMessage = context.getString(R.string.export_failed, it.message.orEmpty()) }
     }
     val importBackup = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) runCatching {
             context.contentResolver.openInputStream(uri)?.reader(Charsets.UTF_8)?.use { it.readText() }
-                ?: error("Не удалось прочитать файл")
+                ?: error(context.getString(R.string.error_read_file))
         }.onSuccess { pendingImport = it }
-            .onFailure { fileMessage = "Ошибка чтения: ${it.message}" }
+            .onFailure { fileMessage = context.getString(R.string.read_failed, it.message.orEmpty()) }
     }
 
     Scaffold(
@@ -177,7 +184,7 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                                 }, null
                             )
                         },
-                        label = { Text(item.label) }
+                        label = { Text(stringResource(item.labelRes)) }
                     )
                 }
             }
@@ -185,7 +192,7 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
     ) { padding ->
         if (state.loading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text("Загрузка…")
+                Text(stringResource(R.string.loading))
             }
         } else {
             when (page) {
@@ -218,9 +225,12 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                             name, work, lunch, enabled, lead, updateCheckEnabled,
                             calendarSettings, forgottenSettings
                         ) {
-                            messageScope.launch { snackbarHostState.showSnackbar("Настройки сохранены") }
+                            messageScope.launch {
+                                snackbarHostState.showSnackbar(context.getString(R.string.settings_saved))
+                            }
                         }
                     },
+                    onLanguageChange = { language -> AppLocale.set(context, language) },
                     onOpenProject = { uriHandler.openUri(PROJECT_URL) },
                     onCheckUpdates = { viewModel.checkForUpdates() },
                     onExportBackup = { exportBackup.launch("WorkBalance_backup.json") },
@@ -278,34 +288,36 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
     pendingImport?.let { json ->
         AlertDialog(
             onDismissRequest = { pendingImport = null },
-            title = { Text("Восстановить резервную копию?") },
-            text = { Text("Все текущие отметки, особые дни и настройки будут заменены данными из выбранного файла.") },
+            title = { Text(stringResource(R.string.restore_backup_title)) },
+            text = { Text(stringResource(R.string.restore_backup_warning)) },
             confirmButton = {
                 TextButton(onClick = {
                     pendingImport = null
                     viewModel.importBackup(json) { fileMessage = it }
-                }) { Text("Восстановить") }
+                }) { Text(stringResource(R.string.restore)) }
             },
-            dismissButton = { TextButton(onClick = { pendingImport = null }) { Text("Отмена") } }
+            dismissButton = {
+                TextButton(onClick = { pendingImport = null }) { Text(stringResource(R.string.common_cancel)) }
+            }
         )
     }
     state.availableRelease?.let { release ->
         AlertDialog(
             onDismissRequest = viewModel::dismissAvailableRelease,
-            title = { Text("Доступна версия ${release.version}") },
+            title = { Text(stringResource(R.string.update_available_title, release.version)) },
             text = {
                 Column(
                     Modifier.heightIn(max = 440.dp).verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("Установлена версия ${BuildConfig.VERSION_NAME}.")
+                    Text(stringResource(R.string.installed_version, BuildConfig.VERSION_NAME))
                     Text(
-                        "Обновление устанавливается вручную со страницы проекта. При той же подписи APK ваши данные сохранятся.",
+                        stringResource(R.string.manual_update_explanation),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     if (release.notes.isNotBlank()) {
                         HorizontalDivider()
-                        Text("Что изменилось", fontWeight = FontWeight.Bold)
+                        Text(stringResource(R.string.whats_new), fontWeight = FontWeight.Bold)
                         Text(release.notes.take(2_000))
                     }
                 }
@@ -314,10 +326,12 @@ fun WorkBalanceApp(viewModel: WorkViewModel) {
                 TextButton(onClick = {
                     viewModel.dismissAvailableRelease()
                     uriHandler.openUri(release.pageUrl)
-                }) { Text("Открыть релиз") }
+                }) { Text(stringResource(R.string.open_release)) }
             },
             dismissButton = {
-                TextButton(onClick = viewModel::dismissAvailableRelease) { Text("Позже") }
+                TextButton(onClick = viewModel::dismissAvailableRelease) {
+                    Text(stringResource(R.string.common_later))
+                }
             }
         )
     }
@@ -334,6 +348,7 @@ private fun TodayScreen(
 ) {
     val today = state.today ?: return
     val calendarNote = today.calendarNote
+    val localizedCalendarNote = calendarNote?.let { it.localizedCalendarNote() }
     LazyColumn(
         modifier.fillMaxSize(),
         contentPadding = PaddingValues(20.dp),
@@ -342,21 +357,24 @@ private fun TodayScreen(
         item {
             Text(state.workplaceName, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(
-                today.date.dayOfWeek.getDisplayName(TextStyle.FULL, Locale("ru")) + ", " + today.date.asDate(),
+                today.date.asWeekday(TextStyle.FULL) + ", " + today.date.asDate(),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
         if (today.shortenedDecisionNeeded) {
             item { ShortenedDayDecisionCard(today, onShortenedDecision) }
-        } else if (!calendarNote.isNullOrBlank()) {
+        } else if (!localizedCalendarNote.isNullOrBlank()) {
             item {
                 val detail = when {
-                    today.requiredMinutes == 0L -> "Сегодня по производственному календарю выходной."
-                    today.shortenedApplied -> "Норма уменьшена на ${today.shortenedByMinutes.toLong().asDuration()}."
-                    today.shortenedByMinutes > 0 -> "Сокращение не учитывается в норме этого дня."
-                    else -> "Норма дня рассчитана с учётом выбранных настроек."
+                    today.requiredMinutes == 0L -> stringResource(R.string.today_calendar_day_off)
+                    today.shortenedApplied -> stringResource(
+                        R.string.daily_target_reduced,
+                        today.shortenedByMinutes.toLong().asDuration()
+                    )
+                    today.shortenedByMinutes > 0 -> stringResource(R.string.reduction_not_applied)
+                    else -> stringResource(R.string.daily_target_uses_calendar)
                 }
-                InfoCard(calendarNote, detail, MaterialTheme.colorScheme.secondaryContainer)
+                InfoCard(localizedCalendarNote, detail, MaterialTheme.colorScheme.secondaryContainer)
             }
         }
         item { StatusCard(state) }
@@ -369,25 +387,36 @@ private fun TodayScreen(
                     containerColor = if (today.isCurrentlyInside) Color(0xFFBE3A31) else MaterialTheme.colorScheme.primary
                 )
             ) {
-                Text(if (today.isCurrentlyInside) "ВЫШЕЛ" else "ВОШЁЛ", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text(
+                    stringResource(
+                        if (today.isCurrentlyInside) R.string.checked_out_button else R.string.checked_in_button
+                    ),
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Отметки сегодня", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.records_today), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
                 FilledTonalButton(onClick = onAdd) {
-                    Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Text(" Добавить")
+                    Icon(Icons.Default.Add, null, Modifier.size(18.dp))
+                    Text(" " + stringResource(R.string.common_add))
                 }
             }
         }
         if (today.events.isEmpty()) item {
-            Text("Отметок пока нет", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.no_records), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         items(today.events, key = { it.id }) { event ->
             EventRow(event, onEdit)
         }
         if (today.warnings.isNotEmpty()) item {
-            InfoCard("Проверьте отметки", today.warnings.joinToString("\n"), MaterialTheme.colorScheme.errorContainer)
+            InfoCard(
+                stringResource(R.string.check_records),
+                localizedWarnings(today.warnings),
+                MaterialTheme.colorScheme.errorContainer
+            )
         }
     }
 }
@@ -399,18 +428,24 @@ private fun ShortenedDayDecisionCard(day: DayResult, onDecision: (Boolean) -> Un
         shape = RoundedCornerShape(22.dp)
     ) {
         Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text(day.calendarNote ?: "Сокращённый день", fontWeight = FontWeight.Bold)
             Text(
-                "Официально рабочий день сокращён на ${day.shortenedByMinutes.toLong().asDuration()}. " +
-                    "Уменьшить сегодняшнюю норму до ${(day.requiredMinutes - day.shortenedByMinutes).coerceAtLeast(0).asDuration()}?",
+                day.calendarNote?.localizedCalendarNote() ?: stringResource(R.string.shortened_day),
+                fontWeight = FontWeight.Bold
+            )
+            Text(
+                stringResource(
+                    R.string.shortened_day_question,
+                    day.shortenedByMinutes.toLong().asDuration(),
+                    (day.requiredMinutes - day.shortenedByMinutes).coerceAtLeast(0).asDuration()
+                ),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = { onDecision(false) }, modifier = Modifier.weight(1f)) {
-                    Text("Не учитывать")
+                    Text(stringResource(R.string.do_not_apply))
                 }
                 Button(onClick = { onDecision(true) }, modifier = Modifier.weight(1f)) {
-                    Text("Учесть")
+                    Text(stringResource(R.string.apply))
                 }
             }
         }
@@ -422,23 +457,37 @@ private fun StatusCard(state: WorkUiState) {
     val day = state.today ?: return
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer), shape = RoundedCornerShape(28.dp)) {
         Column(Modifier.fillMaxWidth().padding(22.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(if (day.isCurrentlyInside) "НА РАБОТЕ" else "НЕ НА РАБОТЕ", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            Text(
+                stringResource(if (day.isCurrentlyInside) R.string.status_at_work else R.string.status_away),
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onPrimaryContainer
+            )
             Spacer(Modifier.height(8.dp))
             Text(day.creditedMinutes.asDuration(), fontSize = 46.sp, fontWeight = FontWeight.Bold)
-            Text("зачтено сегодня из ${day.requiredMinutes.asDuration()}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                stringResource(R.string.credited_today_of, day.requiredMinutes.asDuration()),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             if (day.isCurrentlyInside) {
                 Spacer(Modifier.height(20.dp)); HorizontalDivider()
-                MetricRow("Выход по норме", state.normalExit?.asTime() ?: "—")
-                MetricRow("По плану месяца", state.recommendedExit?.asTime() ?: "—")
+                MetricRow(stringResource(R.string.normal_leave_time), state.normalExit?.asTime() ?: stringResource(R.string.common_not_available))
+                MetricRow(stringResource(R.string.monthly_plan_leave_time), state.recommendedExit?.asTime() ?: stringResource(R.string.common_not_available))
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            MetricRow("Баланс до сегодня", state.previousBalanceMinutes.asSignedDuration())
+            MetricRow(stringResource(R.string.balance_before_today), state.previousBalanceMinutes.asSignedDuration())
             when {
                 state.balanceIncludingTodayMinutes < 0 -> {
                     val hint = if (day.isCurrentlyInside && state.balanceZeroExit != null) {
-                        "До нулевого баланса ${(-state.balanceIncludingTodayMinutes).asDuration()}: оставайтесь до ${state.balanceZeroExit.asTime()}"
+                        stringResource(
+                            R.string.balance_zero_stay_until,
+                            (-state.balanceIncludingTodayMinutes).asDuration(),
+                            state.balanceZeroExit.asTime()
+                        )
                     } else {
-                        "До нулевого баланса не хватает ${(-state.balanceIncludingTodayMinutes).asDuration()}"
+                        stringResource(
+                            R.string.balance_zero_missing,
+                            (-state.balanceIncludingTodayMinutes).asDuration()
+                        )
                     }
                     Text(
                         hint,
@@ -448,31 +497,31 @@ private fun StatusCard(state: WorkUiState) {
                     )
                 }
                 state.balanceIncludingTodayMinutes > 0 -> Text(
-                    "Текущий запас: ${state.balanceIncludingTodayMinutes.asSignedDuration()}",
+                    stringResource(R.string.current_surplus, state.balanceIncludingTodayMinutes.asSignedDuration()),
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.SemiBold
                 )
                 day.events.isNotEmpty() -> Text(
-                    "Текущий баланс полностью закрыт",
+                    stringResource(R.string.balance_cleared),
                     modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                     fontWeight = FontWeight.SemiBold
                 )
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            MetricRow("На территории", day.presenceMinutes.asDuration())
+            MetricRow(stringResource(R.string.on_site), day.presenceMinutes.asDuration())
             if (state.schedule.lunchMinutes > 0) {
-                MetricRow("Вне территории всего", day.outsideMinutes.asDuration())
-                MetricRow("Обед вне территории", day.lunchOutsideMinutes.asDuration())
+                MetricRow(stringResource(R.string.off_site_total), day.outsideMinutes.asDuration())
+                MetricRow(stringResource(R.string.official_break_off_site), day.lunchOutsideMinutes.asDuration())
                 if (day.deductedLunchMinutes > 0) {
-                    MetricRow("Обед на территории", day.deductedLunchMinutes.asDuration())
+                    MetricRow(stringResource(R.string.official_break_on_site), day.deductedLunchMinutes.asDuration())
                 }
                 if (day.extraOutsideMinutes > 0) {
-                    MetricRow("Доп. отсутствие", day.extraOutsideMinutes.asDuration())
+                    MetricRow(stringResource(R.string.additional_absence), day.extraOutsideMinutes.asDuration())
                 }
             } else {
-                MetricRow("Вне территории", day.outsideMinutes.asDuration())
+                MetricRow(stringResource(R.string.off_site), day.outsideMinutes.asDuration())
             }
         }
     }
@@ -488,10 +537,13 @@ private fun EventRow(event: WorkEvent, onEdit: (WorkEvent) -> Unit) {
         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.Schedule, null, tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.weight(1f).padding(start = 14.dp)) {
-                Text(if (event.type == EventType.IN) "Вход" else "Выход", fontWeight = FontWeight.SemiBold)
+                Text(
+                    stringResource(if (event.type == EventType.IN) R.string.entry else R.string.exit),
+                    fontWeight = FontWeight.SemiBold
+                )
                 Text(event.at.asTime(), style = MaterialTheme.typography.titleLarge)
             }
-            Icon(Icons.Default.Edit, "Исправить", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Default.Edit, stringResource(R.string.common_edit), tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -511,9 +563,13 @@ private fun CalendarScreen(
     var dayForKind by remember { mutableStateOf<DayResult?>(null) }
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-            IconButton(onClick = { onMonth(state.selectedMonth.minusMonths(1)) }) { Icon(Icons.Default.ChevronLeft, "Предыдущий месяц") }
+            IconButton(onClick = { onMonth(state.selectedMonth.minusMonths(1)) }) {
+                Icon(Icons.Default.ChevronLeft, stringResource(R.string.previous_month))
+            }
             Text(state.selectedMonth.asMonthTitle(), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            IconButton(onClick = { onMonth(state.selectedMonth.plusMonths(1)) }) { Icon(Icons.Default.ChevronRight, "Следующий месяц") }
+            IconButton(onClick = { onMonth(state.selectedMonth.plusMonths(1)) }) {
+                Icon(Icons.Default.ChevronRight, stringResource(R.string.next_month))
+            }
         }
         LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item { MonthSummary(month) }
@@ -522,9 +578,8 @@ private fun CalendarScreen(
             ) {
                 item {
                     InfoCard(
-                        "Нет официального календаря на ${state.selectedMonth.year} год",
-                        "Пока используется приблизительный график по дням недели и ваши ручные изменения. " +
-                            "Праздники и переносы этого года ещё не учтены.",
+                        stringResource(R.string.no_official_calendar_title, state.selectedMonth.year),
+                        stringResource(R.string.no_official_calendar_body),
                         MaterialTheme.colorScheme.errorContainer
                     )
                 }
@@ -570,9 +625,9 @@ private fun CalendarScreen(
 private fun MonthSummary(month: MonthResult) {
     Card(shape = RoundedCornerShape(22.dp)) {
         Column(Modifier.padding(18.dp)) {
-            MetricRow("План месяца", month.planMinutes.asDuration())
-            MetricRow("Зачтено", month.creditedMinutes.asDuration())
-            MetricRow("Баланс на сегодня", month.balanceToDateMinutes.asSignedDuration())
+            MetricRow(stringResource(R.string.month_target), month.planMinutes.asDuration())
+            MetricRow(stringResource(R.string.credited), month.creditedMinutes.asDuration())
+            MetricRow(stringResource(R.string.balance_to_date), month.balanceToDateMinutes.asSignedDuration())
         }
     }
 }
@@ -580,7 +635,7 @@ private fun MonthSummary(month: MonthResult) {
 @Composable
 private fun DayRow(day: DayResult, kind: DayKind?, onClick: () -> Unit) {
     val isFree = day.requiredMinutes == 0L
-    val calendarNote = day.calendarNote
+    val calendarNote = day.calendarNote?.localizedCalendarNote()
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
@@ -588,12 +643,16 @@ private fun DayRow(day: DayResult, kind: DayKind?, onClick: () -> Unit) {
     ) {
         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("${day.date.dayOfMonth}, ${day.date.dayOfWeek.getDisplayName(TextStyle.SHORT, Locale("ru"))}", fontWeight = FontWeight.Bold)
+                Text("${day.date.dayOfMonth}, ${day.date.asWeekday(TextStyle.SHORT)}", fontWeight = FontWeight.Bold)
                 Text(
                     when {
-                        kind == DayKind.PLANNED_ABSENCE -> "Не буду — норму отработать заранее"
-                        isFree -> calendarNote ?: "Выходной / особый день"
-                        else -> "${day.creditedMinutes.asDuration()} из ${day.requiredMinutes.asDuration()}"
+                        kind == DayKind.PLANNED_ABSENCE -> stringResource(R.string.planned_absence_row)
+                        isFree -> calendarNote ?: stringResource(R.string.day_off_or_special)
+                        else -> stringResource(
+                            R.string.credited_of_required,
+                            day.creditedMinutes.asDuration(),
+                            day.requiredMinutes.asDuration()
+                        )
                     },
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -602,12 +661,12 @@ private fun DayRow(day: DayResult, kind: DayKind?, onClick: () -> Unit) {
                 }
                 when {
                     day.shortenedDecisionNeeded -> Text(
-                        "Нужно решить: учитывать сокращение",
+                        stringResource(R.string.shortening_decision_needed),
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.SemiBold
                     )
                     day.shortenedApplied -> Text(
-                        "Норма сокращена на ${day.shortenedByMinutes.toLong().asDuration()}",
+                        stringResource(R.string.target_reduced_by, day.shortenedByMinutes.toLong().asDuration()),
                         color = MaterialTheme.colorScheme.primary
                     )
                 }
@@ -627,7 +686,7 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
     }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
         item {
-            Text("Прогноз", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text(stringResource(R.string.forecast_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text(month.month.asMonthTitle(), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (state.productionCalendar.settings.federalEnabled &&
@@ -635,30 +694,43 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
         ) {
             item {
                 InfoCard(
-                    "Предварительный план",
-                    "Официальный производственный календарь на ${month.month.year} год не установлен. " +
-                        "Прогноз пока рассчитан по обычной рабочей неделе.",
+                    stringResource(R.string.estimated_plan),
+                    stringResource(R.string.calendar_not_installed_forecast, month.month.year),
                     MaterialTheme.colorScheme.errorContainer
                 )
             }
         }
-        item { InfoCard("Осталось закрыть", month.remainingMinutes.asDuration(), MaterialTheme.colorScheme.primaryContainer, large = true) }
+        item {
+            InfoCard(
+                stringResource(R.string.remaining_to_complete),
+                month.remainingMinutes.asDuration(),
+                MaterialTheme.colorScheme.primaryContainer,
+                large = true
+            )
+        }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Выполнение месяца", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.month_completion), fontWeight = FontWeight.Bold)
                     LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
-                    Text("${(progress * 100).toInt()}%", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        stringResource(R.string.progress_percent, (progress * 100).toInt()),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
             }
         }
         item {
             InfoCard(
-                "Нужно в среднем",
+                stringResource(R.string.average_needed),
                 if (month.remainingWorkDays > 0) {
-                    "${month.averageMinutesPerRemainingDay.asDuration()} в день\nДней для отработки: ${month.remainingWorkDays}"
+                    stringResource(
+                        R.string.average_per_day,
+                        month.averageMinutesPerRemainingDay.asDuration(),
+                        month.remainingWorkDays
+                    )
                 } else {
-                    "Дней для отработки не осталось"
+                    stringResource(R.string.no_workdays_remaining)
                 },
                 MaterialTheme.colorScheme.secondaryContainer,
                 large = true
@@ -668,42 +740,42 @@ private fun ForecastScreen(state: WorkUiState, modifier: Modifier = Modifier) {
             val currentMonth = month.month == YearMonth.from(state.now)
             val paceBalance = if (currentMonth) state.previousBalanceMinutes else month.balanceToDateMinutes
             val message = when {
-                paceBalance > 0 -> "До начала сегодняшнего дня накоплен запас ${paceBalance.asDuration()}. Его можно использовать для более раннего ухода."
-                paceBalance < 0 -> "До начала сегодняшнего дня не хватало ${(-paceBalance).asDuration()}. Новая средняя норма уже учитывает этот минус."
-                else -> "До начала сегодняшнего дня вы шли точно по месячному плану."
+                paceBalance > 0 -> stringResource(R.string.pace_surplus, paceBalance.asDuration())
+                paceBalance < 0 -> stringResource(R.string.pace_deficit, (-paceBalance).asDuration())
+                else -> stringResource(R.string.pace_on_plan)
             }
-            InfoCard("Текущий темп", message, MaterialTheme.colorScheme.surfaceVariant)
+            InfoCard(stringResource(R.string.current_pace), message, MaterialTheme.colorScheme.surfaceVariant)
         }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(18.dp)) {
-                    MetricRow("План", month.planMinutes.asDuration())
-                    MetricRow("Зачтено", month.creditedMinutes.asDuration())
-                    MetricRow("Осталось", month.remainingMinutes.asDuration())
+                    MetricRow(stringResource(R.string.target), month.planMinutes.asDuration())
+                    MetricRow(stringResource(R.string.credited), month.creditedMinutes.asDuration())
+                    MetricRow(stringResource(R.string.remaining), month.remainingMinutes.asDuration())
                 }
             }
         }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(18.dp)) {
-                    Text("Статистика месяца", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.monthly_statistics), fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
-                    MetricRow("На территории", month.presenceMinutes.asDuration())
-                    MetricRow("Вне территории", month.outsideMinutes.asDuration())
+                    MetricRow(stringResource(R.string.on_site), month.presenceMinutes.asDuration())
+                    MetricRow(stringResource(R.string.off_site_total), month.outsideMinutes.asDuration())
                     if (state.schedule.lunchMinutes > 0) {
-                        MetricRow("Обед вне территории", month.lunchOutsideMinutes.asDuration())
-                        MetricRow("Обед на территории", month.deductedLunchMinutes.asDuration())
-                        MetricRow("Доп. отсутствие", month.extraOutsideMinutes.asDuration())
+                        MetricRow(stringResource(R.string.official_break_off_site), month.lunchOutsideMinutes.asDuration())
+                        MetricRow(stringResource(R.string.official_break_on_site), month.deductedLunchMinutes.asDuration())
+                        MetricRow(stringResource(R.string.additional_absence), month.extraOutsideMinutes.asDuration())
                     }
-                    MetricRow("Дней с отметками", month.workedDays.toString())
-                    MetricRow("Среднее за день", month.averageCreditedPerWorkedDay.asDuration())
+                    MetricRow(stringResource(R.string.days_with_records), month.workedDays.toString())
+                    MetricRow(stringResource(R.string.average_per_worked_day), month.averageCreditedPerWorkedDay.asDuration())
                 }
             }
         }
         item {
             InfoCard(
-                "Планируемые отсутствия",
-                "Отметьте в календаре «Не буду, отработаю заранее». Месячная норма сохранится, а среднее будет рассчитано только по доступным дням.",
+                stringResource(R.string.planned_absences),
+                stringResource(R.string.planned_absences_help),
                 MaterialTheme.colorScheme.surfaceVariant
             )
         }
@@ -723,6 +795,7 @@ private fun SettingsScreen(
         ProductionCalendarSettings,
         ForgottenMarkReminderSettings
     ) -> Unit,
+    onLanguageChange: (AppLanguage) -> Unit,
     onOpenProject: () -> Unit,
     onCheckUpdates: () -> Unit,
     onExportBackup: () -> Unit,
@@ -732,6 +805,7 @@ private fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var selectedLanguage by remember { mutableStateOf(AppLocale.current(context)) }
     var name by remember(state.workplaceName) { mutableStateOf(state.workplaceName) }
     var workHours by remember(state.schedule.workMinutes) { mutableStateOf((state.schedule.workMinutes / 60).toString()) }
     var workMinutes by remember(state.schedule.workMinutes) { mutableStateOf((state.schedule.workMinutes % 60).toString()) }
@@ -768,52 +842,102 @@ private fun SettingsScreen(
     var showInstructions by remember { mutableStateOf(false) }
 
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        item { Text("Настройки", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+        item { Text(stringResource(R.string.settings_title), style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
         item {
-            OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Название работы") }, modifier = Modifier.fillMaxWidth())
+            Card(shape = RoundedCornerShape(22.dp)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(stringResource(R.string.app_language), fontWeight = FontWeight.Bold)
+                    Text(
+                        stringResource(R.string.app_language_help),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    listOf(
+                        AppLanguage.SYSTEM to R.string.language_system,
+                        AppLanguage.ENGLISH to R.string.language_english,
+                        AppLanguage.RUSSIAN to R.string.language_russian
+                    ).forEach { (language, labelRes) ->
+                        if (selectedLanguage == language) {
+                            Button(
+                                onClick = { selectedLanguage = language; onLanguageChange(language) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(stringResource(labelRes)) }
+                        } else {
+                            OutlinedButton(
+                                onClick = { selectedLanguage = language; onLanguageChange(language) },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text(stringResource(labelRes)) }
+                        }
+                    }
+                }
+            }
         }
         item {
-            Text("Готовые режимы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text(stringResource(R.string.workplace_name)) },
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+        item {
+            Text(stringResource(R.string.presets), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedButton(onClick = {
                     workHours = "8"; workMinutes = "0"; lunchMinutes = "60"
-                }, modifier = Modifier.weight(1f)) { Text("8 ч + 1 ч") }
+                }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.preset_full_time)) }
                 OutlinedButton(onClick = {
                     workHours = "4"; workMinutes = "0"; lunchMinutes = "30"
-                }, modifier = Modifier.weight(1f)) { Text("4 ч + 30 мин") }
+                }, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.preset_half_time)) }
             }
         }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Свой график", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.custom_schedule), fontWeight = FontWeight.Bold)
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        OutlinedTextField(workHours, { workHours = it.filter(Char::isDigit).take(2) }, label = { Text("Часы") }, modifier = Modifier.weight(1f))
-                        OutlinedTextField(workMinutes, { workMinutes = it.filter(Char::isDigit).take(2) }, label = { Text("Минуты") }, modifier = Modifier.weight(1f))
+                        OutlinedTextField(
+                            workHours,
+                            { workHours = it.filter(Char::isDigit).take(2) },
+                            label = { Text(stringResource(R.string.hours)) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            workMinutes,
+                            { workMinutes = it.filter(Char::isDigit).take(2) },
+                            label = { Text(stringResource(R.string.minutes)) },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
-                    OutlinedTextField(lunchMinutes, { lunchMinutes = it.filter(Char::isDigit).take(3) }, label = { Text("Обязательный обед, минут") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        lunchMinutes,
+                        { lunchMinutes = it.filter(Char::isDigit).take(3) },
+                        label = { Text(stringResource(R.string.required_break_minutes)) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
                 }
             }
         }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Производственный календарь", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.production_calendar), fontWeight = FontWeight.Bold)
+                    val years = state.availableCalendarYears.sorted().joinToString()
+                    val yearsLabel = if (years.isBlank()) stringResource(R.string.none) else years
                     Text(
-                        "Встроенные официальные данные: ${state.availableCalendarYears.sorted().joinToString().ifBlank { "нет" }}.",
+                        stringResource(R.string.bundled_calendar_years, yearsLabel),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Праздники России", fontWeight = FontWeight.SemiBold)
-                            Text("Нерабочие дни и переносы", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.russian_holidays), fontWeight = FontWeight.SemiBold)
+                            Text(stringResource(R.string.non_working_and_transfers), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = federalCalendarEnabled, onCheckedChange = { federalCalendarEnabled = it })
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Праздники региона", fontWeight = FontWeight.SemiBold)
-                            Text("Например, Радоница", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.regional_holidays), fontWeight = FontWeight.SemiBold)
+                            Text(stringResource(R.string.regional_holidays_example), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(
                             checked = regionalCalendarEnabled,
@@ -826,35 +950,34 @@ private fun SettingsScreen(
                         )
                     }
                     if (regionalCalendarEnabled) {
-                        Text("Регион", fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.region), fontWeight = FontWeight.SemiBold)
                         CalendarRegion.entries.filter { it != CalendarRegion.NONE }.forEach { region ->
                             if (calendarRegion == region) {
                                 Button(onClick = { calendarRegion = region }, modifier = Modifier.fillMaxWidth()) {
-                                    Text(region.title)
+                                    Text(region.localizedTitle())
                                 }
                             } else {
                                 OutlinedButton(onClick = { calendarRegion = region }, modifier = Modifier.fillMaxWidth()) {
-                                    Text(region.title)
+                                    Text(region.localizedTitle())
                                 }
                             }
                         }
                     }
                     HorizontalDivider()
-                    Text("Сокращённые дни", fontWeight = FontWeight.SemiBold)
+                    Text(stringResource(R.string.shortened_days), fontWeight = FontWeight.SemiBold)
                     ShortenedDayMode.entries.forEach { mode ->
                         if (shortenedDayMode == mode) {
                             Button(onClick = { shortenedDayMode = mode }, modifier = Modifier.fillMaxWidth()) {
-                                Text(mode.title)
+                                Text(mode.localizedTitle())
                             }
                         } else {
                             OutlinedButton(onClick = { shortenedDayMode = mode }, modifier = Modifier.fillMaxWidth()) {
-                                Text(mode.title)
+                                Text(mode.localizedTitle())
                             }
                         }
                     }
                     Text(
-                        "Режим «Спрашивать» покажет вопрос в конкретный предпраздничный день. " +
-                            "Так можно учесть фактические правила работодателя.",
+                        stringResource(R.string.shortened_mode_help),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
@@ -865,18 +988,24 @@ private fun SettingsScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Напоминание об обеде", fontWeight = FontWeight.Bold)
-                            Text("Пока вы отмечены за территорией", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.lunch_reminder), fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.while_off_site), color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                         Switch(checked = reminderEnabled, onCheckedChange = { reminderEnabled = it })
                     }
                     if (reminderEnabled) {
-                        Text("Предупредить заранее")
+                        Text(stringResource(R.string.remind_before))
                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            if (reminderLead == 10) Button(onClick = { reminderLead = 10 }, modifier = Modifier.weight(1f)) { Text("10 минут") }
-                            else OutlinedButton(onClick = { reminderLead = 10 }, modifier = Modifier.weight(1f)) { Text("10 минут") }
-                            if (reminderLead == 15) Button(onClick = { reminderLead = 15 }, modifier = Modifier.weight(1f)) { Text("15 минут") }
-                            else OutlinedButton(onClick = { reminderLead = 15 }, modifier = Modifier.weight(1f)) { Text("15 минут") }
+                            if (reminderLead == 10) Button(onClick = { reminderLead = 10 }, modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.minutes_short, 10))
+                            } else OutlinedButton(onClick = { reminderLead = 10 }, modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.minutes_short, 10))
+                            }
+                            if (reminderLead == 15) Button(onClick = { reminderLead = 15 }, modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.minutes_short, 15))
+                            } else OutlinedButton(onClick = { reminderLead = 15 }, modifier = Modifier.weight(1f)) {
+                                Text(stringResource(R.string.minutes_short, 15))
+                            }
                         }
                     }
                 }
@@ -887,9 +1016,9 @@ private fun SettingsScreen(
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Забытые отметки", fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.forgotten_records), fontWeight = FontWeight.Bold)
                             Text(
-                                "Напомнить о входе или выходе без геолокации",
+                                stringResource(R.string.forgotten_records_help),
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -899,7 +1028,7 @@ private fun SettingsScreen(
                         )
                     }
                     if (forgottenReminderEnabled) {
-                        Text("Проверять отсутствие входа", fontWeight = FontWeight.SemiBold)
+                        Text(stringResource(R.string.check_missing_entry), fontWeight = FontWeight.SemiBold)
                         OutlinedButton(
                             onClick = {
                                 TimePickerDialog(
@@ -913,13 +1042,22 @@ private fun SettingsScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.Schedule, null)
-                            Text("  В %02d:%02d".format(forgottenEntryTime.hour, forgottenEntryTime.minute))
+                            Text(
+                                "  " + stringResource(
+                                    R.string.at_time,
+                                    "%02d:%02d".format(forgottenEntryTime.hour, forgottenEntryTime.minute)
+                                )
+                            )
                         }
 
-                        Text("Напомнить о выходе после расчётного конца смены")
+                        Text(stringResource(R.string.exit_reminder_after_shift))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(30, 60, 120).forEach { minutes ->
-                                val label = if (minutes < 60) "$minutes мин" else "${minutes / 60} ч"
+                                val label = if (minutes < 60) {
+                                    stringResource(R.string.minutes_short, minutes)
+                                } else {
+                                    stringResource(R.string.hours_short, minutes / 60)
+                                }
                                 if (forgottenExitGrace == minutes) {
                                     Button(
                                         onClick = { forgottenExitGrace = minutes },
@@ -934,10 +1072,14 @@ private fun SettingsScreen(
                             }
                         }
 
-                        Text("Кнопка «Напомнить позже»")
+                        Text(stringResource(R.string.snooze_button_setting))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             listOf(15, 30, 60).forEach { minutes ->
-                                val label = if (minutes < 60) "$minutes мин" else "1 ч"
+                                val label = if (minutes < 60) {
+                                    stringResource(R.string.minutes_short, minutes)
+                                } else {
+                                    stringResource(R.string.hours_short, 1)
+                                }
                                 if (forgottenSnooze == minutes) {
                                     Button(
                                         onClick = { forgottenSnooze = minutes },
@@ -952,7 +1094,7 @@ private fun SettingsScreen(
                             }
                         }
                         Text(
-                            "Выходные, праздники, отпуск, больничный, командировка и запланированное отсутствие пропускаются.",
+                            stringResource(R.string.forgotten_skip_days),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -962,41 +1104,51 @@ private fun SettingsScreen(
         item {
             OutlinedButton(onClick = { showInstructions = true }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                 Icon(Icons.Default.HelpOutline, null)
-                Text("  Инструкция")
+                Text("  " + stringResource(R.string.instructions_button))
             }
         }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("О приложении", fontWeight = FontWeight.Bold)
-                    MetricRow("Версия", BuildConfig.VERSION_NAME)
-                    Text("Автор проекта: Максим (MaxStriX324)")
+                    Text(stringResource(R.string.about_app), fontWeight = FontWeight.Bold)
+                    MetricRow(stringResource(R.string.version), BuildConfig.VERSION_NAME)
+                    Text(stringResource(R.string.project_author))
                     Text(
-                        "Исходный код, история изменений и установочные APK публикуются на GitHub.",
+                        stringResource(R.string.github_description),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     OutlinedButton(onClick = onOpenProject, modifier = Modifier.fillMaxWidth()) {
-                        Text("Открыть проект на GitHub")
+                        Text(stringResource(R.string.open_github))
                     }
-                    OutlinedButton(
-                        onClick = onCheckUpdates,
-                        enabled = !state.checkingForUpdates,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(if (state.checkingForUpdates) "Проверяем…" else "Проверить обновления")
-                    }
-                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("Автоматическая проверка", fontWeight = FontWeight.SemiBold)
+                    if (BuildConfig.GITHUB_UPDATES_ENABLED) {
+                        OutlinedButton(
+                            onClick = onCheckUpdates,
+                            enabled = !state.checkingForUpdates,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
                             Text(
-                                "При запуске, не чаще одного раза в сутки. Рабочие данные не отправляются.",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                stringResource(
+                                    if (state.checkingForUpdates) {
+                                        R.string.checking_updates
+                                    } else {
+                                        R.string.check_updates
+                                    }
+                                )
                             )
                         }
-                        Switch(
-                            checked = automaticUpdateCheckEnabled,
-                            onCheckedChange = { automaticUpdateCheckEnabled = it }
-                        )
+                        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(R.string.automatic_update_check), fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    stringResource(R.string.automatic_update_check_help),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = automaticUpdateCheckEnabled,
+                                onCheckedChange = { automaticUpdateCheckEnabled = it }
+                            )
+                        }
                     }
                 }
             }
@@ -1024,24 +1176,24 @@ private fun SettingsScreen(
                         snoozeMinutes = forgottenSnooze
                     )
                 )
-            }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Сохранить настройки") }
+            }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text(stringResource(R.string.save_settings)) }
         }
         item {
             Card(shape = RoundedCornerShape(22.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Резервная копия и отчёты", fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.backup_and_reports), fontWeight = FontWeight.Bold)
                     Text(
-                        "JSON полностью сохраняет данные приложения. CSV содержит расчёт по выбранному в календаре месяцу.",
+                        stringResource(R.string.backup_and_reports_help),
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Button(onClick = onExportBackup, modifier = Modifier.fillMaxWidth()) {
-                        Text("Экспорт резервной копии JSON")
+                        Text(stringResource(R.string.export_json))
                     }
                     OutlinedButton(onClick = onImportBackup, modifier = Modifier.fillMaxWidth()) {
-                        Text("Восстановить из JSON")
+                        Text(stringResource(R.string.restore_json))
                     }
                     OutlinedButton(onClick = onExportCsv, modifier = Modifier.fillMaxWidth()) {
-                        Text("Экспорт месяца ${state.selectedMonth.asMonthTitle()} в CSV")
+                        Text(stringResource(R.string.export_month_csv, state.selectedMonth.asMonthTitle()))
                     }
                     fileMessage?.let {
                         Text(it, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
@@ -1079,56 +1231,55 @@ private fun InfoCard(title: String, body: String, color: Color, large: Boolean =
 private fun InstructionsDialog(onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Как пользоваться WorkBalance") },
+        title = { Text(stringResource(R.string.instructions_title)) },
         text = {
             Column(
                 Modifier.heightIn(max = 520.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
                 InstructionSection(
-                    "1. Вход и выход",
-                    "При проходе на территорию нажмите «Вошёл», при любом выходе — «Вышел». Повторный вход продолжит расчёт этого же дня."
+                    stringResource(R.string.instruction_1_title),
+                    stringResource(R.string.instruction_1_body)
                 )
                 InstructionSection(
-                    "2. Обед",
-                    "Время вне территории автоматически покрывает обязательный обед. Если выходы короче нормы, недостающая часть вычитается из присутствия. Всё сверх нормы показывается как дополнительное отсутствие."
+                    stringResource(R.string.instruction_2_title),
+                    stringResource(R.string.instruction_2_body)
                 )
                 InstructionSection(
-                    "3. Исправление отметок",
-                    "Нажмите отметку на главном экране или выберите день в календаре. Можно изменить время, удалить ошибочную запись или добавить пропущенный интервал."
+                    stringResource(R.string.instruction_3_title),
+                    stringResource(R.string.instruction_3_body)
                 )
                 InstructionSection(
-                    "4. Баланс",
-                    "«Баланс до сегодня» — сумма прошлых дней. Красная подсказка показывает текущую нехватку с учётом сегодняшнего дня и время, до которого нужно остаться для полного закрытия минуса."
+                    stringResource(R.string.instruction_4_title),
+                    stringResource(R.string.instruction_4_body)
                 )
                 InstructionSection(
-                    "5. План месяца",
-                    "В календаре можно отметить день «Не буду, отработаю заранее». Его норма останется в месячном плане, но часы распределятся между доступными днями."
+                    stringResource(R.string.instruction_5_title),
+                    stringResource(R.string.instruction_5_body)
                 )
                 InstructionSection(
-                    "6. Забытые отметки",
-                    "В настройках можно включить проверку входа и выхода. Уведомление позволяет поставить отметку сейчас, отложить напоминание или отметить сегодняшний день как запланированное отсутствие. Геолокация не используется."
+                    stringResource(R.string.instruction_6_title),
+                    stringResource(R.string.instruction_6_body)
                 )
                 InstructionSection(
-                    "7. Резервная копия",
-                    "Перед обновлением или переносом телефона сохраните JSON. CSV предназначен для сверки выбранного месяца с выгрузкой проходной."
+                    stringResource(R.string.instruction_7_title),
+                    stringResource(R.string.instruction_7_body)
                 )
                 InstructionSection(
-                    "8. Производственный календарь",
-                    "В настройках отдельно включаются праздники России, праздники региона и сокращённые дни. " +
-                        "В режиме «Спрашивать» решение сохраняется для конкретной даты. Ручной тип дня в календаре всегда имеет приоритет."
+                    stringResource(R.string.instruction_8_title),
+                    stringResource(R.string.instruction_8_body)
                 )
                 InstructionSection(
-                    "9. Быстрый доступ",
-                    "Добавьте виджет на домашний экран или плитку WorkBalance в шторку Android. Все кнопки используют одну базу данных."
+                    stringResource(R.string.instruction_9_title),
+                    stringResource(R.string.instruction_9_body)
                 )
                 InstructionSection(
-                    "10. Обновления",
-                    "В разделе «О приложении» можно открыть GitHub и проверить новую версию. Автоматическая проверка выполняется при запуске не чаще одного раза в сутки и не отправляет рабочие отметки."
+                    stringResource(R.string.instruction_10_title),
+                    stringResource(R.string.instruction_10_body)
                 )
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Понятно") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.understood)) } }
     )
 }
 
@@ -1159,7 +1310,7 @@ private fun DayDetailsDialog(
     onChangeKind: () -> Unit
 ) {
     val intervals = remember(day.events) { pairIntervals(day.events) }
-    val calendarNote = day.calendarNote
+    val calendarNote = day.calendarNote?.localizedCalendarNote()
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(day.date.asDate()) },
@@ -1168,7 +1319,7 @@ private fun DayDetailsDialog(
                 Modifier.heightIn(max = 540.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(kind.title, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
+                Text(kind.localizedTitle(), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
                 if (!calendarNote.isNullOrBlank()) {
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
                         Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1176,48 +1327,53 @@ private fun DayDetailsDialog(
                             when {
                                 day.shortenedDecisionNeeded -> {
                                     Text(
-                                        "Официальное сокращение: ${day.shortenedByMinutes.toLong().asDuration()}. " +
-                                            "Учитывать его в норме этого дня?"
+                                        stringResource(
+                                            R.string.official_shortening_question,
+                                            day.shortenedByMinutes.toLong().asDuration()
+                                        )
                                     )
                                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                         OutlinedButton(
                                             onClick = { onShortenedDecision(false) },
                                             modifier = Modifier.weight(1f)
-                                        ) { Text("Нет") }
+                                        ) { Text(stringResource(R.string.common_no)) }
                                         Button(
                                             onClick = { onShortenedDecision(true) },
                                             modifier = Modifier.weight(1f)
-                                        ) { Text("Да") }
+                                        ) { Text(stringResource(R.string.common_yes)) }
                                     }
                                 }
                                 day.shortenedApplied -> Text(
-                                    "Норма сокращена на ${day.shortenedByMinutes.toLong().asDuration()}."
+                                    stringResource(
+                                        R.string.target_reduced_by,
+                                        day.shortenedByMinutes.toLong().asDuration()
+                                    )
                                 )
-                                day.requiredMinutes == 0L -> Text("Нерабочий день по выбранному календарю.")
-                                day.shortenedByMinutes > 0 -> Text("Сокращение не учитывается в норме этого дня.")
+                                day.requiredMinutes == 0L -> Text(stringResource(R.string.calendar_non_working_day))
+                                day.shortenedByMinutes > 0 -> Text(stringResource(R.string.reduction_not_applied))
                             }
                         }
                     }
                 }
                 Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
                     Column(Modifier.padding(14.dp)) {
-                        MetricRow("Норма дня", day.requiredMinutes.asDuration())
-                        MetricRow("На территории", day.presenceMinutes.asDuration())
-                        MetricRow("Вне территории", day.outsideMinutes.asDuration())
+                        MetricRow(stringResource(R.string.day_target), day.requiredMinutes.asDuration())
+                        MetricRow(stringResource(R.string.on_site), day.presenceMinutes.asDuration())
+                        MetricRow(stringResource(R.string.off_site_total), day.outsideMinutes.asDuration())
                         if (showLunchBreakdown) {
-                            MetricRow("Обед вне территории", day.lunchOutsideMinutes.asDuration())
-                            MetricRow("Обед на территории", day.deductedLunchMinutes.asDuration())
+                            MetricRow(stringResource(R.string.official_break_off_site), day.lunchOutsideMinutes.asDuration())
+                            MetricRow(stringResource(R.string.official_break_on_site), day.deductedLunchMinutes.asDuration())
                             if (day.extraOutsideMinutes > 0) {
-                                MetricRow("Доп. отсутствие", day.extraOutsideMinutes.asDuration())
+                                MetricRow(stringResource(R.string.additional_absence), day.extraOutsideMinutes.asDuration())
                             }
                         }
-                        MetricRow("Зачтено", day.creditedMinutes.asDuration())
-                        MetricRow("Баланс дня", day.balanceMinutes.asSignedDuration())
+                        MetricRow(stringResource(R.string.credited), day.creditedMinutes.asDuration())
+                        MetricRow(stringResource(R.string.day_balance), day.balanceMinutes.asSignedDuration())
                     }
                 }
-                Text("Рабочие интервалы", fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.work_intervals), fontWeight = FontWeight.Bold)
                 if (intervals.isEmpty()) {
-                    Text("Интервалов пока нет", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.no_intervals), color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 intervals.forEach { interval ->
                     Surface(
@@ -1228,31 +1384,31 @@ private fun DayDetailsDialog(
                         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Schedule, null, tint = MaterialTheme.colorScheme.primary)
                             Text(
-                                "${interval.start.at.asTime()} — ${interval.end?.at?.asTime() ?: "не закрыт"}",
+                                "${interval.start.at.asTime()} — ${interval.end?.at?.asTime() ?: stringResource(R.string.open_interval)}",
                                 Modifier.weight(1f).padding(start = 12.dp),
                                 fontWeight = FontWeight.SemiBold
                             )
-                            Icon(Icons.Default.Edit, "Исправить")
+                            Icon(Icons.Default.Edit, stringResource(R.string.common_edit))
                         }
                     }
                 }
                 if (day.warnings.isNotEmpty()) {
                     Text(
-                        day.warnings.joinToString("\n"),
+                        localizedWarnings(day.warnings),
                         color = MaterialTheme.colorScheme.error,
                         fontWeight = FontWeight.SemiBold
                     )
                 }
                 Button(onClick = onAddInterval, modifier = Modifier.fillMaxWidth()) {
                     Icon(Icons.Default.Add, null)
-                    Text(" Добавить интервал")
+                    Text(" " + stringResource(R.string.add_interval))
                 }
                 OutlinedButton(onClick = onChangeKind, modifier = Modifier.fillMaxWidth()) {
-                    Text("Тип дня: ${kind.title}")
+                    Text(stringResource(R.string.day_type, kind.localizedTitle()))
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_close)) } }
     )
 }
 
@@ -1297,7 +1453,9 @@ private fun IntervalEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Добавить интервал" else "Исправить интервал") },
+        title = {
+            Text(stringResource(if (initial == null) R.string.add_interval_title else R.string.edit_interval_title))
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(date.asDate(), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1306,15 +1464,15 @@ private fun IntervalEditorDialog(
                         TimePickerDialog(context, { _, hour, minute -> start = LocalTime.of(hour, minute) }, start.hour, start.minute, true).show()
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Вход: ${LocalDateTime.of(date, start).asTime()}") }
+                ) { Text(stringResource(R.string.entry_time, LocalDateTime.of(date, start).asTime())) }
                 OutlinedButton(
                     onClick = {
                         TimePickerDialog(context, { _, hour, minute -> end = LocalTime.of(hour, minute) }, end.hour, end.minute, true).show()
                     },
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Выход: ${LocalDateTime.of(date, end).asTime()}") }
+                ) { Text(stringResource(R.string.exit_time, LocalDateTime.of(date, end).asTime())) }
                 if (!valid) {
-                    Text("Выход должен быть позже входа", color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.exit_after_entry_error), color = MaterialTheme.colorScheme.error)
                 }
                 if (onDelete != null) {
                     TextButton(
@@ -1322,7 +1480,7 @@ private fun IntervalEditorDialog(
                         colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                     ) {
                         Icon(Icons.Default.Delete, null)
-                        Text(" Удалить интервал")
+                        Text(" " + stringResource(R.string.delete_interval))
                     }
                 }
             }
@@ -1331,9 +1489,9 @@ private fun IntervalEditorDialog(
             TextButton(
                 onClick = { onSave(LocalDateTime.of(date, start), LocalDateTime.of(date, end)) },
                 enabled = valid
-            ) { Text("Сохранить") }
+            ) { Text(stringResource(R.string.common_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
     )
 }
 
@@ -1346,13 +1504,13 @@ private fun DayKindDialog(date: LocalDate, onDismiss: () -> Unit, onSelect: (Day
             Column {
                 DayKind.entries.forEach { kind ->
                     Text(
-                        kind.title,
+                        kind.localizedTitle(),
                         Modifier.fillMaxWidth().clickable { onSelect(kind) }.padding(vertical = 11.dp)
                     )
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
     )
 }
 
@@ -1371,33 +1529,45 @@ private fun EventEditorDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Добавить отметку" else "Исправить отметку") },
+        title = {
+            Text(stringResource(if (initial == null) R.string.add_record_title else R.string.edit_record_title))
+        },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    if (type == EventType.IN) Button(onClick = { type = EventType.IN }, modifier = Modifier.weight(1f)) { Text("Вход") }
-                    else OutlinedButton(onClick = { type = EventType.IN }, modifier = Modifier.weight(1f)) { Text("Вход") }
-                    if (type == EventType.OUT) Button(onClick = { type = EventType.OUT }, modifier = Modifier.weight(1f)) { Text("Выход") }
-                    else OutlinedButton(onClick = { type = EventType.OUT }, modifier = Modifier.weight(1f)) { Text("Выход") }
+                    if (type == EventType.IN) Button(onClick = { type = EventType.IN }, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.entry))
+                    } else OutlinedButton(onClick = { type = EventType.IN }, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.entry))
+                    }
+                    if (type == EventType.OUT) Button(onClick = { type = EventType.OUT }, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.exit))
+                    } else OutlinedButton(onClick = { type = EventType.OUT }, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(R.string.exit))
+                    }
                 }
                 OutlinedButton(
                     onClick = {
                         DatePickerDialog(context, { _, year, month, day -> date = LocalDate.of(year, month + 1, day) }, date.year, date.monthValue - 1, date.dayOfMonth).show()
                     }, modifier = Modifier.fillMaxWidth()
-                ) { Text("Дата: ${date.asDate()}") }
+                ) { Text(stringResource(R.string.date_value, date.asDate())) }
                 OutlinedButton(
                     onClick = {
                         TimePickerDialog(context, { _, hour, minute -> time = LocalTime.of(hour, minute) }, time.hour, time.minute, true).show()
                     }, modifier = Modifier.fillMaxWidth()
-                ) { Text("Время: ${LocalDateTime.of(date, time).asTime()}") }
+                ) { Text(stringResource(R.string.time_value, LocalDateTime.of(date, time).asTime())) }
                 if (onDelete != null) {
                     TextButton(onClick = onDelete, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) {
-                        Icon(Icons.Default.Delete, null); Text(" Удалить отметку")
+                        Icon(Icons.Default.Delete, null); Text(" " + stringResource(R.string.delete_record))
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(LocalDateTime.of(date, time), type) }) { Text("Сохранить") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+        confirmButton = {
+            TextButton(onClick = { onSave(LocalDateTime.of(date, time), type) }) {
+                Text(stringResource(R.string.common_save))
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.common_cancel)) } }
     )
 }

@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import ru.maxstrix.workbalance.MainActivity
+import ru.maxstrix.workbalance.AppLocale
 import ru.maxstrix.workbalance.R
 import ru.maxstrix.workbalance.WorkBalanceApplication
 import ru.maxstrix.workbalance.domain.WorkTimeCalculator
@@ -33,6 +34,7 @@ class WorkBalanceWidgetProvider : AppWidgetProvider() {
         scope.launch {
             runCatching { PresenceController(context).toggle() }
             val manager = AppWidgetManager.getInstance(context)
+            val localizedContext = AppLocale.wrap(context)
             val ids = manager.getAppWidgetIds(
                 ComponentName(context, WorkBalanceWidgetProvider::class.java)
             )
@@ -72,11 +74,31 @@ class WorkBalanceWidgetProvider : AppWidgetProvider() {
             widgetIds.forEach { id ->
                 val views = RemoteViews(context.packageName, R.layout.work_balance_widget)
                 views.setTextViewText(R.id.widget_title, data.workplaceName)
-                views.setTextViewText(R.id.widget_status, if (today.isCurrentlyInside) "НА РАБОТЕ" else "НЕ НА РАБОТЕ")
-                views.setTextViewText(R.id.widget_today, "Сегодня ${duration(today.creditedMinutes)} / ${duration(today.requiredMinutes)}")
-                views.setTextViewText(R.id.widget_balance, "Баланс ${signed(month.balanceToDateMinutes)}")
-                views.setTextViewText(R.id.widget_exit, "Уйти $exitTime")
-                views.setTextViewText(R.id.widget_toggle, if (today.isCurrentlyInside) "ВЫШЕЛ" else "ВОШЁЛ")
+                views.setTextViewText(
+                    R.id.widget_status,
+                    localizedContext.getString(
+                        if (today.isCurrentlyInside) R.string.widget_status_at_work else R.string.widget_status_away
+                    )
+                )
+                views.setTextViewText(
+                    R.id.widget_today,
+                    localizedContext.getString(
+                        R.string.widget_today,
+                        duration(today.creditedMinutes),
+                        duration(today.requiredMinutes)
+                    )
+                )
+                views.setTextViewText(
+                    R.id.widget_balance,
+                    localizedContext.getString(R.string.widget_balance, signed(month.balanceToDateMinutes))
+                )
+                views.setTextViewText(R.id.widget_exit, localizedContext.getString(R.string.widget_leave, exitTime))
+                views.setTextViewText(
+                    R.id.widget_toggle,
+                    localizedContext.getString(
+                        if (today.isCurrentlyInside) R.string.checked_out_button else R.string.checked_in_button
+                    )
+                )
                 views.setOnClickPendingIntent(R.id.widget_toggle, toggleIntent(context))
                 views.setOnClickPendingIntent(R.id.widget_root, openAppIntent(context))
                 manager.updateAppWidget(id, views)

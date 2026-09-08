@@ -13,7 +13,7 @@
         android:layout_height="wrap_content"
         android:ellipsize="end"
         android:maxLines="1"
-        android:text="Работа"
+        android:text="@string/default_workplace_name"
         android:textColor="#FF10245C"
         android:textSize="16sp"
         android:textStyle="bold" />
@@ -23,7 +23,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="3dp"
-        android:text="НЕ НА РАБОТЕ"
+        android:text="@string/widget_status_away"
         android:textColor="#FF3156D3"
         android:textSize="12sp"
         android:textStyle="bold" />
@@ -33,7 +33,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="10dp"
-        android:text="Сегодня 0:00 / 8:00"
+        android:text="@string/widget_today_preview"
         android:textColor="#FF161A24"
         android:textSize="15sp"
         android:textStyle="bold" />
@@ -49,7 +49,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Баланс 0:00"
+            android:text="@string/widget_balance_preview"
             android:textColor="#FF4D5569"
             android:textSize="12sp" />
 
@@ -57,7 +57,7 @@
             android:id="@+id/widget_exit"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Уйти —"
+            android:text="@string/widget_leave_preview"
             android:textColor="#FF4D5569"
             android:textSize="12sp" />
     </LinearLayout>
@@ -69,7 +69,7 @@
         android:layout_marginTop="12dp"
         android:background="@drawable/widget_button_background"
         android:gravity="center"
-        android:text="ВОШЁЛ"
+        android:text="@string/checked_in_button"
         android:textColor="#FFFFFFFF"
         android:textSize="15sp"
         android:textStyle="bold" />

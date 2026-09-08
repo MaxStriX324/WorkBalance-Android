@@ -18,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import ru.maxstrix.workbalance.MainActivity
+import ru.maxstrix.workbalance.AppLocale
 import ru.maxstrix.workbalance.R
 import ru.maxstrix.workbalance.WorkBalanceApplication
 import ru.maxstrix.workbalance.data.WorkData
@@ -344,7 +345,8 @@ private object ForgottenMarkNotification {
             PackageManager.PERMISSION_GRANTED
         ) return
 
-        createChannel(context)
+        val localizedContext = AppLocale.wrap(context)
+        createChannel(context, localizedContext)
         val openApp = PendingIntent.getActivity(
             context,
             4210,
@@ -353,12 +355,20 @@ private object ForgottenMarkNotification {
         )
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(if (kind == ForgottenMarkReminderKind.ENTRY) "Вход не отмечен" else "Выход не отмечен")
+            .setContentTitle(
+                localizedContext.getString(
+                    if (kind == ForgottenMarkReminderKind.ENTRY) {
+                        R.string.entry_not_recorded
+                    } else {
+                        R.string.exit_not_recorded
+                    }
+                )
+            )
             .setContentText(
                 if (kind == ForgottenMarkReminderKind.ENTRY) {
-                    "В $workplaceName сегодня ещё нет отметки о входе."
+                    localizedContext.getString(R.string.entry_notification_text, workplaceName)
                 } else {
-                    "Расчётная смена закончилась, но приложение считает, что вы на работе."
+                    localizedContext.getString(R.string.exit_notification_text)
                 }
             )
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -368,12 +378,12 @@ private object ForgottenMarkNotification {
             .setContentIntent(openApp)
 
         if (kind == ForgottenMarkReminderKind.ENTRY) {
-            builder.addAction(0, "Войти сейчас", action(context, ACTION_MARK_ENTRY, 4211))
-            builder.addAction(0, "Напомнить позже", action(context, ACTION_SNOOZE_ENTRY, 4212))
-            builder.addAction(0, "Сегодня не работаю", action(context, ACTION_NOT_WORKING_TODAY, 4213))
+            builder.addAction(0, localizedContext.getString(R.string.check_in_now), action(context, ACTION_MARK_ENTRY, 4211))
+            builder.addAction(0, localizedContext.getString(R.string.remind_later), action(context, ACTION_SNOOZE_ENTRY, 4212))
+            builder.addAction(0, localizedContext.getString(R.string.not_working_today), action(context, ACTION_NOT_WORKING_TODAY, 4213))
         } else {
-            builder.addAction(0, "Выйти сейчас", action(context, ACTION_MARK_EXIT, 4214))
-            builder.addAction(0, "Напомнить позже", action(context, ACTION_SNOOZE_EXIT, 4215))
+            builder.addAction(0, localizedContext.getString(R.string.check_out_now), action(context, ACTION_MARK_EXIT, 4214))
+            builder.addAction(0, localizedContext.getString(R.string.remind_later), action(context, ACTION_SNOOZE_EXIT, 4215))
         }
 
         val notificationId = if (kind == ForgottenMarkReminderKind.ENTRY) {
@@ -392,11 +402,15 @@ private object ForgottenMarkNotification {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-    private fun createChannel(context: Context) {
+    private fun createChannel(context: Context, localizedContext: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "Забытые отметки", NotificationManager.IMPORTANCE_HIGH).apply {
-                description = "Напоминает отметить вход или выход"
+            NotificationChannel(
+                CHANNEL_ID,
+                localizedContext.getString(R.string.forgotten_channel_name),
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = localizedContext.getString(R.string.forgotten_channel_description)
             }
         )
     }

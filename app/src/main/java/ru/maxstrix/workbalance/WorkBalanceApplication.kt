@@ -11,5 +11,10 @@ class WorkBalanceApplication : Application() {
         Room.databaseBuilder(this, AppDatabase::class.java, "work-balance.db").build()
     }
     val calendarProvider by lazy { ProductionCalendarProvider(this) }
-    val repository by lazy { WorkRepository(database.workDao(), calendarProvider) }
+    val repository by lazy {
+        WorkRepository(
+            database.workDao(),
+            calendarProvider
+        ) { AppLocale.wrap(this).getString(R.string.default_workplace_name) }
+    }
 }

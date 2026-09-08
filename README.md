@@ -1,167 +1,128 @@
 # WorkBalance for Android
 
-[![Android CI](https://github.com/maxstrix324/WorkBalance-Android/actions/workflows/android.yml/badge.svg)](https://github.com/maxstrix324/WorkBalance-Android/actions/workflows/android.yml)
+[Русская версия](README_RU.md)
+
+[![Android CI](https://github.com/MaxStriX324/WorkBalance-Android/actions/workflows/android.yml/badge.svg)](https://github.com/MaxStriX324/WorkBalance-Android/actions/workflows/android.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android)](https://developer.android.com/)
 
-Локальное Android-приложение для учёта рабочего времени при проходной системе: входов, выходов, обязательного обеда, дневного и месячного баланса.
+WorkBalance is a private, offline-first Android app for tracking check-ins, check-outs, required breaks, daily targets, and monthly time balance. It is designed for workplaces where hours may be redistributed between days as long as the monthly target is completed.
 
-Приложение отвечает на практические вопросы:
+> WorkBalance is an independent planning tool, not an official attendance system. Always compare its results with your employer's rules and records.
 
-- сколько времени уже зачтено сегодня;
-- во сколько можно уйти по дневной норме;
-- можно ли уйти раньше, используя накопленный плюс;
-- сколько осталось отработать до конца месяца;
-- какая средняя продолжительность дня нужна для выполнения плана.
+## Highlights
 
-> Проект находится на ранней стадии. Перед использованием результатов для официального табеля сверяйте алгоритм с правилами своей организации.
+- one-tap check-in and check-out;
+- multiple work intervals during a day;
+- editing and deleting records for any date;
+- clear separation of required break and additional absence;
+- configurable daily target and required break;
+- presets for `8:00 + 1:00` and `4:00 + 0:30` schedules;
+- daily and monthly balance, leave-time estimates, and monthly forecast;
+- planned unavailable days without reducing the monthly target;
+- month statistics and progress;
+- Russian 2026 production calendar with transferred days off;
+- optional Saratov Oblast calendar with Radonitsa;
+- configurable shortened-workday handling;
+- local forgotten check-in/check-out reminders without location access;
+- break-ending reminder;
+- home-screen widget and Quick Settings tile;
+- complete JSON backup and restore;
+- localized monthly CSV export;
+- Russian and English interfaces with an in-app language switch;
+- no account, advertising, analytics, or proprietary server.
 
-## Возможности
-
-- большая кнопка «Вошёл / Вышел»;
-- несколько входов и выходов в течение дня;
-- ручное добавление, исправление и удаление отметок;
-- вычет только недостающей части обязательного обеда;
-- настраиваемая дневная норма и продолжительность обеда;
-- готовые режимы `8:00 + 1:00` и `4:00 + 0:30`;
-- дневной и месячный баланс времени;
-- выход по дневной норме, в нулевой баланс и по плану месяца;
-- прогноз до конца выбранного месяца;
-- календарь рабочих, выходных и особых дней;
-- производственный календарь России на 2026 год с переносами праздников;
-- отдельное включение календаря Саратовской области с Радоницей;
-- три режима сокращённых дней: спрашивать, учитывать автоматически или игнорировать;
-- отпуск, больничный, командировка и отгул;
-- уведомление за 10 или 15 минут до окончания обеда;
-- настраиваемые напоминания о забытом входе и выходе без геолокации;
-- действия из уведомления: поставить отметку, напомнить позже или отметить отсутствие;
-- подробное разделение обеда и дополнительного отсутствия;
-- редактор рабочих интервалов любого прошедшего дня;
-- планируемые отсутствия с переносом часов на доступные дни;
-- понятная подсказка с текущей нехваткой времени и моментом полного закрытия баланса;
-- скрытие обеденных показателей при нулевой длительности обеда;
-- статистика и прогресс выполнения месяца;
-- виджет домашнего экрана со статусом, балансом и кнопкой отметки;
-- плитка быстрых настроек для отметки без открытия приложения;
-- полная резервная копия и восстановление в JSON;
-- экспорт выбранного месяца в CSV для сверки с данными проходной;
-- сведения о версии, авторе и странице проекта в настройках;
-- ручная и необязательная автоматическая проверка обновлений через GitHub;
-- локальное хранение без аккаунта, аналитики и собственного сервера.
-
-## Как считается обед
+## Break calculation
 
 ```text
-Зачтено = присутствие − max(0, обязательный обед − выходы за территорию)
+Credited time = on-site time − max(0, required break − off-site time)
 ```
 
-Пример без выхода:
+Example without leaving the site:
 
 ```text
-Вход 09:00 → выход 18:00
-Присутствие: 9:00
-Обязательный обед: 1:00
-Зачтено: 8:00
+09:00 check-in → 18:00 check-out
+On-site: 9:00
+Required break: 1:00
+Credited: 8:00
 ```
 
-Пример с часовым выходом:
+Example with a one-hour off-site break:
 
 ```text
-09:00 вход → 13:00 выход → 14:00 вход → 18:00 выход
-Присутствие: 8:00
-Вне территории: 1:00
-Дополнительный вычет: 0:00
-Зачтено: 8:00
+09:00 in → 13:00 out → 14:00 in → 18:00 out
+On-site: 8:00
+Off-site: 1:00
+Additional deduction: 0:00
+Credited: 8:00
 ```
 
-Подробное описание: [docs/CALCULATION.md](docs/CALCULATION.md).
+See [calculation details](docs/CALCULATION.md), [production calendar notes](docs/PRODUCTION_CALENDAR.md), and [reminder rules](docs/REMINDERS.md).
 
-Устройство и обновление годовых календарей: [docs/PRODUCTION_CALENDAR.md](docs/PRODUCTION_CALENDAR.md).
+## Privacy
 
-Логика локальных напоминаний: [docs/REMINDERS.md](docs/REMINDERS.md).
+Work records stay in the local Room database. The GitHub distribution uses internet access only to read the repository's public release list; that check can be disabled. Google Play and RuStore variants omit the in-app updater and the internet permission. JSON and CSV files are created only when the user explicitly selects a destination through Android's system file picker.
 
-## Конфиденциальность
+Read the [privacy policy](PRIVACY.md) or its [Russian version](PRIVACY_RU.md).
 
-Все отметки хранятся в локальной базе Room и не передаются разработчику. Доступ к интернету используется только для получения списка публичных релизов из GitHub. Автоматическая проверка выполняется при запуске не чаще одного раза в сутки, и её можно отключить в настройках. Экспорт создаётся только по действию пользователя через системный выбор файла.
+## Build variants
 
-JSON-резервная копия не содержит идентификаторов телефона, учётной записи или владельца. Подробнее: [PRIVACY.md](PRIVACY.md).
+| Variant | Intended distribution | Built-in GitHub update check | Internet permission |
+|---|---|---:|---:|
+| `github` | GitHub Releases and direct APK sharing | Yes | Yes |
+| `play` | Google Play | No | No |
+| `rustore` | RuStore | No | No |
 
-## Технологии
+All variants use the same application ID, database, and backup format. Updating an installed build preserves data when the new package has a higher version code and is signed with the same key.
 
-- Kotlin;
-- Jetpack Compose и Material 3;
-- Room;
-- Coroutines и Flow;
-- AlarmManager для локальных напоминаний;
-- Android Storage Access Framework для импорта и экспорта;
-- min SDK 26, target SDK 35;
-- JDK 17, Gradle 8.9.
+## Build from source
 
-## Сборка
+Requirements:
 
-1. Установить Android Studio и JDK 17.
-2. Открыть папку, содержащую `settings.gradle.kts`.
-3. Дождаться синхронизации Gradle.
-4. Выполнить:
+- Android Studio with Android SDK Platform 36;
+- JDK 17;
+- internet access for the first Gradle sync.
+
+Windows PowerShell:
 
 ```powershell
-.\gradlew.bat test assembleDebug
+.\gradlew.bat testGithubDebugUnitTest assembleGithubDebug
 ```
 
-Debug APK:
+Linux or macOS:
+
+```bash
+./gradlew testGithubDebugUnitTest assembleGithubDebug
+```
+
+The debug APK is created at:
 
 ```text
-app\build\outputs\apk\debug\app-debug.apk
+app/build/outputs/apk/github/debug/app-github-debug.apk
 ```
 
-Подробная сборка и постоянная release-подпись: [docs/BUILDING.md](docs/BUILDING.md).
+For signed APK/AAB instructions and store-specific tasks, see [docs/BUILDING.md](docs/BUILDING.md).
 
-Публикация собственного форка или нового репозитория: [docs/PUBLISHING.md](docs/PUBLISHING.md).
+## Technology
 
-## Резервная копия и отчёт
+- Kotlin and Jetpack Compose;
+- Material 3;
+- Room, Coroutines, and Flow;
+- AlarmManager for local reminders;
+- Android Storage Access Framework for import and export;
+- min SDK 26, target SDK 36;
+- JDK 17, Gradle 8.11.1, Android Gradle Plugin 8.9.1.
 
-В разделе `Настройки → Резервная копия и отчёты` доступны:
+## Current scope
 
-- `WorkBalance_backup.json` — полный переносимый снимок данных;
-- восстановление JSON с проверкой формата до замены базы;
-- `WorkBalance_ГГГГ-ММ.csv` — дневной расчёт выбранного месяца.
+The main calculation and editing workflow is usable and covered by unit tests. The next major validation step is comparison against anonymized real access-control exports. Planned work also includes future production-calendar packs, database migration tests, accessibility review, and store publication assets.
 
-Форматы описаны в [docs/BACKUP_FORMAT.md](docs/BACKUP_FORMAT.md).
+## Contributing
 
-## Быстрый доступ
+Bug reports and improvements are welcome. Never publish signing keys, real backups, employee names, employer names, badge identifiers, or internal documents. See [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- Виджет: удерживайте свободное место на домашнем экране, откройте `Виджеты`, найдите `Баланс часов` и перетащите виджет на экран.
-- Плитка: раскройте шторку быстрых настроек, нажмите кнопку редактирования и добавьте плитку `WorkBalance`.
+## Author and license
 
-Кнопка в приложении, виджет и плитка используют один механизм. Любая отметка сразу обновляет остальные элементы и сохраняется в той же локальной базе.
+Created by Maksim ([MaxStriX324](https://github.com/MaxStriX324)).
 
-## Текущий статус и планы
-
-- [x] Основной учёт входов и выходов;
-- [x] Баланс и прогноз;
-- [x] Напоминание об окончании обеда;
-- [x] JSON-резервная копия;
-- [x] CSV-отчёт месяца;
-- [ ] Сверка с реальной выгрузкой системы контроля доступа;
-- [x] Производственный календарь России и Саратовской области на 2026 год;
-- [ ] Пакеты производственного календаря для следующих лет и регионов;
-- [x] Виджет домашнего экрана;
-- [x] Плитка быстрых настроек;
-- [x] Редактор прошлых дней;
-- [x] Планируемые отсутствия без уменьшения месячной нормы;
-- [x] Статистика месяца;
-- [x] Ручная и автоматическая проверка обновлений;
-- [x] Напоминание о забытом входе или выходе;
-- [ ] Автоматические тесты миграции базы данных.
-
-## Участие в разработке
-
-Сообщения об ошибках и предложения приветствуются. Перед публикацией примера удаляйте из него ФИО, название организации, номера пропусков и другие служебные данные.
-
-См. [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Автор и лицензия
-
-Автор: Максим ([MaxStriX324](https://github.com/MaxStriX324))
-
-Проект распространяется по лицензии [MIT](LICENSE).
+Released under the [MIT License](LICENSE).

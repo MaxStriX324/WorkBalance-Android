@@ -10,7 +10,8 @@
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
-        android:label="Баланс часов"
+        android:label="@string/app_name"
+        android:localeConfig="@xml/locales_config"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.WorkBalance">
@@ -53,7 +54,7 @@
             android:name=".quickaccess.tile.WorkBalanceTileService"
             android:exported="true"
             android:icon="@drawable/ic_launcher_foreground"
-            android:label="WorkBalance"
+            android:label="@string/app_name_short"
             android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
             <intent-filter>
                 <action android:name="android.service.quicksettings.action.QS_TILE" />

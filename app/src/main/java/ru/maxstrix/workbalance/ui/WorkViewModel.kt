@@ -1,6 +1,7 @@
 package ru.maxstrix.workbalance.ui
 
 import android.content.Context
+import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -13,7 +14,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import ru.maxstrix.workbalance.BuildConfig
+import ru.maxstrix.workbalance.AppLocale
+import ru.maxstrix.workbalance.R
 import ru.maxstrix.workbalance.data.BackupCodec
+import ru.maxstrix.workbalance.data.BackupValidationError
+import ru.maxstrix.workbalance.data.BackupValidationException
 import ru.maxstrix.workbalance.data.WorkData
 import ru.maxstrix.workbalance.data.WorkRepository
 import ru.maxstrix.workbalance.domain.DayKind
@@ -50,7 +55,7 @@ private data class UpdateUiState(
 data class WorkUiState(
     val loading: Boolean = true,
     val now: LocalDateTime = LocalDateTime.now(),
-    val workplaceName: String = "Работа",
+    val workplaceName: String = "",
     val schedule: Schedule = Schedule(),
     val today: DayResult? = null,
     val month: MonthResult? = null,
@@ -152,7 +157,10 @@ class WorkViewModel(
         }
         viewModelScope.launch {
             val data = repository.data.first()
-            if (data.automaticUpdateCheckEnabled && automaticUpdateCheckIsDue()) {
+            if (BuildConfig.GITHUB_UPDATES_ENABLED &&
+                data.automaticUpdateCheckEnabled &&
+                automaticUpdateCheckIsDue()
+            ) {
                 markAutomaticUpdateCheck()
                 checkForUpdates(showCurrentVersionMessage = false)
             }
@@ -264,6 +272,7 @@ class WorkViewModel(
     }
 
     fun checkForUpdates(showCurrentVersionMessage: Boolean = true) {
+        if (!BuildConfig.GITHUB_UPDATES_ENABLED) return
         if (updateUiState.value.checking) return
         viewModelScope.launch {
             updateUiState.value = UpdateUiState(checking = true)
@@ -274,7 +283,7 @@ class WorkViewModel(
                     } else {
                         UpdateUiState(
                             message = if (showCurrentVersionMessage) {
-                                "Установлена актуальная версия ${BuildConfig.VERSION_NAME}"
+                                text(R.string.latest_version_installed, BuildConfig.VERSION_NAME)
                             } else null
                         )
                     }
@@ -282,7 +291,7 @@ class WorkViewModel(
                 .onFailure {
                     updateUiState.value = UpdateUiState(
                         message = if (showCurrentVersionMessage) {
-                            "Не удалось проверить обновления. Проверьте подключение к интернету."
+                            text(R.string.update_check_failed)
                         } else null
                     )
                 }
@@ -298,20 +307,33 @@ class WorkViewModel(
     }
 
     fun backupJson(): String = BackupCodec.encode(
-        requireNotNull(state.value.data) { "Данные приложения ещё не загружены" }
+        requireNotNull(state.value.data) { text(R.string.data_not_loaded) }
     )
 
     fun monthCsv(): String = BackupCodec.monthCsv(
-        requireNotNull(state.value.month) { "Месяц ещё не рассчитан" }
+        requireNotNull(state.value.month) { text(R.string.month_not_calculated) },
+        AppLocale.current(appContext).languageTag
     )
 
     fun importBackup(json: String, onResult: (String) -> Unit) = viewModelScope.launch {
         runCatching { repository.importBackup(json) }
             .onSuccess {
                 refreshExternalSurfaces()
-                onResult("Резервная копия восстановлена")
+                onResult(text(R.string.backup_restored))
             }
-            .onFailure { error -> onResult("Не удалось восстановить: ${error.message ?: "неизвестная ошибка"}") }
+            .onFailure { error ->
+                val detail = if (error is BackupValidationException) {
+                    backupValidationMessage(error.reason)
+                } else {
+                    error.message ?: text(R.string.unknown_error)
+                }
+                onResult(
+                    text(
+                        R.string.restore_failed,
+                        detail
+                    )
+                )
+            }
     }
 
     private fun automaticUpdateCheckIsDue(): Boolean {
@@ -327,6 +349,22 @@ class WorkViewModel(
 
     private fun updatePreferences() =
         appContext.getSharedPreferences(UPDATE_CHECK_PREFERENCES, Context.MODE_PRIVATE)
+
+    private fun text(@StringRes resource: Int, vararg arguments: Any): String =
+        AppLocale.wrap(appContext).getString(resource, *arguments)
+
+    private fun backupValidationMessage(reason: BackupValidationError): String = text(
+        when (reason) {
+            BackupValidationError.INVALID_FORMAT -> R.string.backup_error_invalid_format
+            BackupValidationError.UNSUPPORTED_VERSION -> R.string.backup_error_unsupported_version
+            BackupValidationError.INVALID_WORK_TARGET -> R.string.backup_error_work_target
+            BackupValidationError.INVALID_BREAK_DURATION -> R.string.backup_error_break_duration
+            BackupValidationError.INVALID_BREAK_REMINDER -> R.string.backup_error_break_reminder
+            BackupValidationError.INVALID_EXIT_REMINDER -> R.string.backup_error_exit_reminder
+            BackupValidationError.INVALID_SNOOZE -> R.string.backup_error_snooze
+            BackupValidationError.INVALID_SPECIAL_DAY_TARGET -> R.string.backup_error_special_day_target
+        }
+    )
 
     private fun refreshExternalSurfaces() {
         QuickAccessUpdater.refresh(appContext)

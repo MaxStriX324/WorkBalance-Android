@@ -7,14 +7,14 @@ plugins {
 
 android {
     namespace = "ru.maxstrix.workbalance"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "ru.maxstrix.workbalance"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 9
-        versionName = "0.7.0"
+        targetSdk = 36
+        versionCode = 10
+        versionName = "0.8.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -22,6 +22,22 @@ android {
         release {
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("github") {
+            dimension = "distribution"
+            buildConfigField("boolean", "GITHUB_UPDATES_ENABLED", "true")
+        }
+        create("play") {
+            dimension = "distribution"
+            buildConfigField("boolean", "GITHUB_UPDATES_ENABLED", "false")
+        }
+        create("rustore") {
+            dimension = "distribution"
+            buildConfigField("boolean", "GITHUB_UPDATES_ENABLED", "false")
         }
     }
 

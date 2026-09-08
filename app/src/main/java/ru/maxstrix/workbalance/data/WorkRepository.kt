@@ -31,7 +31,8 @@ data class WorkData(
 
 class WorkRepository(
     private val dao: WorkDao,
-    private val calendarProvider: ProductionCalendarProvider
+    private val calendarProvider: ProductionCalendarProvider,
+    private val defaultWorkplaceName: () -> String
 ) {
     val data: Flow<WorkData> = combine(
         dao.observeEvents(), dao.observeOverrides(), dao.observeSettings()
@@ -102,7 +103,7 @@ class WorkRepository(
     }
 
     suspend fun setWorkplaceName(name: String) {
-        dao.putSetting(SettingEntity(KEY_WORKPLACE_NAME, name.trim().ifEmpty { "Работа" }))
+        dao.putSetting(SettingEntity(KEY_WORKPLACE_NAME, name.trim().ifEmpty { defaultWorkplaceName() }))
     }
 
     suspend fun setLunchReminder(enabled: Boolean, leadMinutes: Int) {
@@ -137,7 +138,7 @@ class WorkRepository(
     }
 
     suspend fun importBackup(json: String) {
-        val payload = BackupCodec.parse(json)
+        val payload = BackupCodec.parse(json, defaultWorkplaceName())
         dao.replaceAll(payload.events, payload.overrides, payload.settings)
     }
 
@@ -183,7 +184,7 @@ class WorkRepository(
                 workMinutes = settings[KEY_WORK_MINUTES]?.toIntOrNull() ?: 480,
                 lunchMinutes = settings[KEY_LUNCH_MINUTES]?.toIntOrNull() ?: 60
             ),
-            workplaceName = settings[KEY_WORKPLACE_NAME] ?: "Работа",
+            workplaceName = settings[KEY_WORKPLACE_NAME] ?: defaultWorkplaceName(),
             lunchReminderEnabled = settings[KEY_LUNCH_REMINDER_ENABLED]?.toBooleanStrictOrNull() ?: true,
             lunchReminderLeadMinutes = settings[KEY_LUNCH_REMINDER_LEAD]?.toIntOrNull() ?: 15,
             forgottenMarkReminderSettings = ForgottenMarkReminderSettings(

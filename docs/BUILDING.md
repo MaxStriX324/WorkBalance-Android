@@ -1,34 +1,59 @@
-# Сборка и установка
+# Сборка и установка / Build and install
 
 ## Требования
 
 - Android Studio;
 - JDK 17;
-- Android SDK Platform 35;
+- Android SDK Platform 36;
 - Windows, Linux или macOS;
 - интернет при первой синхронизации зависимостей.
 
-Gradle 8.9 не следует запускать на JDK 25. В Android Studio выберите JDK 17 в настройках Gradle.
+Проект использует Gradle 8.11.1 и Android Gradle Plugin 8.9.1. В Android Studio выберите JDK 17 в настройках Gradle. JDK 25 для этой сборки не нужен.
 
-## Debug APK
+The project uses Gradle 8.11.1, Android Gradle Plugin 8.9.1, and JDK 17.
+
+## Варианты / Variants
+
+- `github` — APK для GitHub и прямой установки; содержит проверку релизов GitHub и разрешение на интернет;
+- `play` — сборка Google Play без встроенного обновлятора и разрешения на интернет;
+- `rustore` — сборка RuStore без встроенного обновлятора и разрешения на интернет.
+
+У всех вариантов одинаковый `applicationId = ru.maxstrix.workbalance`, поэтому локальная база совместима. На одно устройство следует устанавливать только вариант, подписанный тем же ключом, что и предыдущая версия.
+
+## Debug APK для GitHub
 
 Windows PowerShell:
 
 ```powershell
-.\gradlew.bat test assembleDebug
+.\gradlew.bat testGithubDebugUnitTest assembleGithubDebug
 ```
 
 Linux или macOS:
 
 ```bash
-./gradlew test assembleDebug
+./gradlew testGithubDebugUnitTest assembleGithubDebug
 ```
 
 Результат:
 
 ```text
-app/build/outputs/apk/debug/app-debug.apk
+app/build/outputs/apk/github/debug/app-github-debug.apk
 ```
+
+## Сборки для публикации
+
+```powershell
+# APK для GitHub
+.\gradlew.bat assembleGithubRelease
+
+# AAB для Google Play
+.\gradlew.bat bundlePlayRelease
+
+# APK для RuStore
+.\gradlew.bat assembleRustoreRelease
+```
+
+Без настроенной подписи Gradle может создать неподписанный release-файл. Для обычной ручной публикации используйте Android Studio и постоянный JKS.
 
 ## Постоянная release-подпись
 
@@ -36,7 +61,8 @@ app/build/outputs/apk/debug/app-debug.apk
 2. Выберите `APK` и модуль `app`.
 3. Создайте JKS или выберите существующий.
 4. Для новых версий всегда используйте тот же файл, alias и пароли.
-5. Выберите вариант `release`, подписи V1 и V2.
+5. Для прямой установки выберите `githubRelease` или `rustoreRelease` и подписи V1/V2.
+6. Для Google Play выберите `playRelease` и формат Android App Bundle (`.aab`).
 
 Ключ следует хранить вне репозитория и резервировать минимум в двух защищённых местах. Потеря ключа не позволит установить новую версию поверх старой.
 

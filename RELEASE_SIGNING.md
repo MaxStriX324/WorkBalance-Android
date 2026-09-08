@@ -12,9 +12,10 @@ Android устанавливает новую версию поверх стар
 4. Сохранить ключ вне папки проекта, например `D:\Android\keys\workbalance-release.jks`.
 5. Задать надёжный пароль хранилища, alias `workbalance`, пароль ключа и срок действия не менее 25 лет.
 6. Сохранить JKS и оба пароля минимум в двух защищённых местах.
-7. Выбрать вариант `release` и обе версии подписи `V1` и `V2`, затем выполнить сборку.
+7. Выбрать вариант `githubRelease` для GitHub или `rustoreRelease` для RuStore и обе версии подписи `V1` и `V2`.
+8. Для Google Play выбрать Android App Bundle и вариант `playRelease`.
 
-Готовый файл обычно создаётся в `app\release\app-release.apk` или `app\build\outputs\apk\release\app-release.apk`.
+Готовые файлы обычно создаются в каталогах `app\build\outputs\apk\<вариант>\release` или `app\build\outputs\bundle\playRelease`.
 
 ## Установка обновлений
 

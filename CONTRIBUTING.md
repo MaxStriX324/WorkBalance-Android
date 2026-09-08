@@ -20,7 +20,7 @@
 4. Выполните:
 
 ```bash
-./gradlew test assembleDebug
+./gradlew testGithubDebugUnitTest assembleGithubDebug
 ```
 
 5. Опишите изменение и его влияние на существующие данные.

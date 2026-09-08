@@ -1,7 +1,7 @@
 @echo off
 setlocal
 set "APP_HOME=%~dp0"
-set "GRADLE_VERSION=8.9"
+set "GRADLE_VERSION=8.11.1"
 set "BOOTSTRAP_DIR=%APP_HOME%.gradle-bootstrap"
 set "GRADLE_HOME=%BOOTSTRAP_DIR%\gradle-%GRADLE_VERSION%"
 set "ARCHIVE=%BOOTSTRAP_DIR%\gradle-%GRADLE_VERSION%-bin.zip"
