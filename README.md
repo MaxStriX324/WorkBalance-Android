@@ -10,6 +10,21 @@ WorkBalance is a private, offline-first Android app for tracking check-ins, chec
 
 > WorkBalance is an independent planning tool, not an official attendance system. Always compare its results with your employer's rules and records.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/today-en.webp" width="150" alt="Today screen">
+  <img src="docs/screenshots/calendar-en.webp" width="150" alt="Calendar screen">
+  <img src="docs/screenshots/forecast-en.webp" width="150" alt="Forecast screen">
+</p>
+<p align="center">
+  <img src="docs/screenshots/settings-en.webp" width="150" alt="Settings screen">
+  <img src="docs/screenshots/calendar-ru.webp" width="150" alt="Calendar screen in Russian">
+  <img src="docs/screenshots/forecast-ru.webp" width="150" alt="Forecast screen in Russian">
+</p>
+
+The screenshots show the current dark-theme interface in English and Russian.
+
 ## Highlights
 
 - one-tap check-in and check-out;

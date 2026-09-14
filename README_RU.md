@@ -6,6 +6,21 @@ WorkBalance — локальное Android-приложение для учёт�
 
 > Это независимый инструмент планирования, а не официальный табель. Результаты нужно сверять с правилами и данными работодателя.
 
+## Скриншоты
+
+<p align="center">
+  <img src="docs/screenshots/today-en.webp" width="150" alt="Экран Сегодня">
+  <img src="docs/screenshots/calendar-en.webp" width="150" alt="Экран Календарь">
+  <img src="docs/screenshots/forecast-en.webp" width="150" alt="Экран Прогноз">
+</p>
+<p align="center">
+  <img src="docs/screenshots/settings-en.webp" width="150" alt="Экран Настройки">
+  <img src="docs/screenshots/calendar-ru.webp" width="150" alt="Календарь на русском языке">
+  <img src="docs/screenshots/forecast-ru.webp" width="150" alt="Прогноз на русском языке">
+</p>
+
+На скриншотах показан текущий интерфейс приложения в тёмной теме на английском и русском языках.
+
 ## Возможности
 
 - большая кнопка «Вошёл / Вышел» и несколько интервалов за день;
