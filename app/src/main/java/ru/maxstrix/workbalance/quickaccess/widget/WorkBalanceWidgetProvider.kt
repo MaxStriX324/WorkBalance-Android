@@ -70,6 +70,7 @@ class WorkBalanceWidgetProvider : AppWidgetProvider() {
             val need = WorkTimeCalculator.minutesUntilCreditedTarget(today, today.requiredMinutes)
             val exitTime = if (today.isCurrentlyInside) now.plusMinutes(need).format(timeFormatter) else "—"
             val manager = AppWidgetManager.getInstance(context)
+            val localizedContext = AppLocale.wrap(context)
 
             widgetIds.forEach { id ->
                 val views = RemoteViews(context.packageName, R.layout.work_balance_widget)
