@@ -34,7 +34,6 @@ class WorkBalanceWidgetProvider : AppWidgetProvider() {
         scope.launch {
             runCatching { PresenceController(context).toggle() }
             val manager = AppWidgetManager.getInstance(context)
-            val localizedContext = AppLocale.wrap(context)
             val ids = manager.getAppWidgetIds(
                 ComponentName(context, WorkBalanceWidgetProvider::class.java)
             )

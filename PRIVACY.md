@@ -35,6 +35,8 @@ The user may explicitly export a JSON backup or a monthly CSV report through And
 
 A JSON backup contains the entered workplace name and exact work records. It does not contain an Android account, hardware identifier, advertising identifier, badge number, or automatically collected identity information.
 
+If Android system backup is enabled on the device, Android may also copy the app database and preferences to the backup provider configured for that device and may restore them during device transfer or reinstallation. This system backup is controlled by Android and the user’s backup provider, not by the WorkBalance developer.
+
 ## Android permissions
 
 - Notifications are used for optional break and forgotten-record reminders.

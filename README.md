@@ -61,7 +61,7 @@ See [calculation details](docs/CALCULATION.md), [production calendar notes](docs
 
 ## Privacy
 
-Work records stay in the local Room database. The GitHub distribution uses internet access only to read the repository's public release list; that check can be disabled. Google Play and RuStore variants omit the in-app updater and the internet permission. JSON and CSV files are created only when the user explicitly selects a destination through Android's system file picker.
+Work records are stored in the app's local Room database. If Android system backup is enabled, Android may back up the database and preferences through the device's configured backup provider. The GitHub distribution uses internet access only to read the repository's public release list; that check can be disabled. Google Play and RuStore variants omit the in-app updater and the internet permission. JSON and CSV exports are created only when the user explicitly selects a destination through Android's system file picker.
 
 Read the [privacy policy](PRIVACY.md) or its [Russian version](PRIVACY_RU.md).
 
