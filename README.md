@@ -6,9 +6,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android)](https://developer.android.com/)
 
-WorkBalance is a private, offline-first Android app for tracking check-ins, check-outs, required breaks, daily targets, and monthly time balance. It is designed for workplaces where hours may be redistributed between days as long as the monthly target is completed.
+WorkBalance is a privacy-focused, offline-first Android app for tracking check-ins, check-outs, required breaks, daily targets, and monthly time balance. It is designed for workplaces where hours may be redistributed between days as long as the monthly target is completed.
 
 > WorkBalance is an independent planning tool, not an official attendance system. Always compare its results with your employer's rules and records.
+
+**Project page:** [WorkBalance overview, screen gallery and installation](https://maxstrix324.github.io/project/workbalance/). **APK releases:** [GitHub Releases](https://github.com/MaxStriX324/WorkBalance-Android/releases).
 
 ## Screenshots
 

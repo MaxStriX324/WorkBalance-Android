@@ -6,6 +6,8 @@ WorkBalance — локальное Android-приложение для учёт�
 
 > Это независимый инструмент планирования, а не официальный табель. Результаты нужно сверять с правилами и данными работодателя.
 
+**Страница проекта:** [описание, скриншоты и установка WorkBalance](https://maxstrix324.github.io/project/workbalance/). **Релизы APK:** [GitHub Releases](https://github.com/MaxStriX324/WorkBalance-Android/releases).
+
 ## Скриншоты
 
 <p align="center">
